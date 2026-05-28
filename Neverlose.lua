@@ -42,6 +42,12 @@ local Theme = {
 
     GroupBoxBg     = Color3.fromRGB(5, 9, 16),     -- (0.019, 0.035, 0.062)
 
+    -- Visibility helpers (derived for Roblox-rendered contrast; the C++ menu
+    -- got natural contrast from the blurred desktop behind the window)
+    CheckOff       = Color3.fromRGB(18, 25, 42),   -- visible square on GroupBoxBg
+    CheckBorderOff = 0.55,                          -- stroke transparency when off
+    StripeAccent   = Color3.fromRGB(77, 125, 255), -- selected-tab left bar
+
     -- Convenience extras (derived, not from C++)
     Background     = Color3.fromRGB(6, 10, 18),    -- same as FrameInactive (window root)
     Sidebar        = Color3.fromRGB(5, 9, 16),     -- same as GroupBoxBg
@@ -886,18 +892,21 @@ function GroupboxMethods:AddToggle(Key, Config)
     local State = CreateElementState(Key, Default)
     Library.Toggles[Key] = State
 
-    local Row, RightControls = self:_AddRow(20)
+    local Row, RightControls = self:_AddRow(22)
 
-    -- 12x12 rounded square checkbox
+    -- 14x14 rounded square checkbox (Neverlose-style, ImGui::Checkbox lookalike)
     local CheckFrame = Create("Frame", {
-        Size = UDim2.fromOffset(12, 12),
-        Position = UDim2.new(0, 0, 0.5, -6),
-        BackgroundColor3 = Default and Theme.Accent or Theme.Button,
+        Size = UDim2.fromOffset(14, 14),
+        Position = UDim2.new(0, 0, 0.5, -7),
+        BackgroundColor3 = Default and Theme.Accent or Theme.CheckOff,
         BorderSizePixel = 0,
         Parent = Row,
     })
     AddCorner(CheckFrame, 3)
-    AddStroke(CheckFrame, Default and Theme.Accent or Theme.Border, 1, Default and 0 or Theme.BorderAlpha)
+    AddStroke(CheckFrame,
+        Default and Theme.Accent or Theme.Border,
+        1,
+        Default and 0 or Theme.CheckBorderOff)
 
     local Mark = Create("TextLabel", {
         Size = UDim2.fromScale(1, 1),
@@ -905,14 +914,14 @@ function GroupboxMethods:AddToggle(Key, Config)
         Text = "✓",
         TextColor3 = Theme.White,
         Font = Enum.Font.GothamBold,
-        TextSize = 10,
+        TextSize = 12,
         Visible = Default,
         Parent = CheckFrame,
     })
 
     local Label = Create("TextLabel", {
         Size = UDim2.new(1, -120, 1, 0),
-        Position = UDim2.fromOffset(20, 0),
+        Position = UDim2.fromOffset(22, 0),
         BackgroundTransparency = 1,
         Text = Text,
         TextColor3 = Default and Theme.Text or Theme.TextDisabled,
@@ -932,12 +941,12 @@ function GroupboxMethods:AddToggle(Key, Config)
     }, ToggleMethods)
 
     function ToggleObj:UpdateVisual(Val)
-        Tween(CheckFrame, 0.15, { BackgroundColor3 = Val and Theme.Accent or Theme.Button })
+        Tween(CheckFrame, 0.15, { BackgroundColor3 = Val and Theme.Accent or Theme.CheckOff })
         local Stroke = CheckFrame:FindFirstChildOfClass("UIStroke")
         if Stroke then
             Tween(Stroke, 0.15, {
                 Color = Val and Theme.Accent or Theme.Border,
-                Transparency = Val and 0 or Theme.BorderAlpha,
+                Transparency = Val and 0 or Theme.CheckBorderOff,
             })
         end
         Mark.Visible = Val
@@ -1031,7 +1040,7 @@ function GroupboxMethods:AddSlider(Key, Config)
     AddCorner(Fill, 2)
 
     local Thumb = Create("Frame", {
-        Size = UDim2.fromOffset(8, 8),
+        Size = UDim2.fromOffset(11, 11),
         AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.new(Pct, 0, 0.5, 0),
         BackgroundColor3 = Theme.White,
@@ -1039,7 +1048,8 @@ function GroupboxMethods:AddSlider(Key, Config)
         ZIndex = 5,
         Parent = Track,
     })
-    AddCorner(Thumb, 4)
+    AddCorner(Thumb, 100)
+    AddStroke(Thumb, Theme.Accent, 1, 0)
 
     local Btn = Create("TextButton", {
         Size = UDim2.new(1, 0, 0, 14),
@@ -1613,22 +1623,22 @@ function TabMethods:AddSubtab(Name)
     }, SubtabMethods)
 
     -- Subtab button (the segmented pill in the header bar)
+    local IsFirstSubtab = (#self.Subtabs == 0)
     local SubtabBtn = Create("TextButton", {
         Size = UDim2.new(0, 0, 1, 0),  -- size set after all subtabs known
-        BackgroundColor3 = Theme.FrameActive,
-        BackgroundTransparency = (#self.Subtabs == 0) and 0.2 or 1,
+        BackgroundColor3 = Theme.Accent,
+        BackgroundTransparency = IsFirstSubtab and 0 or 1,
         Text = "",
         AutoButtonColor = false,
         Parent = self.SubtabBar,
     })
-
-    local SubtabCorner = AddCorner(SubtabBtn, 4)
+    AddCorner(SubtabBtn, 4)
 
     Create("TextLabel", {
         Size = UDim2.fromScale(1, 1),
         BackgroundTransparency = 1,
         Text = Name,
-        TextColor3 = (#self.Subtabs == 0) and Theme.Text or Theme.TextDisabled,
+        TextColor3 = IsFirstSubtab and Theme.Text or Theme.TextDisabled,
         Font = Enum.Font.GothamMedium,
         TextSize = 12,
         Parent = SubtabBtn,
@@ -1656,14 +1666,14 @@ function TabMethods:AddSubtab(Name)
 
     SubtabBtn.MouseEnter:Connect(function()
         if self.ActiveSubtab ~= SubtabObj then
-            Tween(SubtabBtn, 0.15, { BackgroundTransparency = 0.6 })
+            Tween(SubtabBtn, 0.15, { BackgroundColor3 = Theme.FrameActive, BackgroundTransparency = 0.4 })
             local Lbl = SubtabBtn:FindFirstChildOfClass("TextLabel")
             if Lbl then Tween(Lbl, 0.15, { TextColor3 = Theme.Text }) end
         end
     end)
     SubtabBtn.MouseLeave:Connect(function()
         if self.ActiveSubtab ~= SubtabObj then
-            Tween(SubtabBtn, 0.15, { BackgroundTransparency = 1 })
+            Tween(SubtabBtn, 0.15, { BackgroundColor3 = Theme.FrameActive, BackgroundTransparency = 1 })
             local Lbl = SubtabBtn:FindFirstChildOfClass("TextLabel")
             if Lbl then Tween(Lbl, 0.15, { TextColor3 = Theme.TextDisabled }) end
         end
@@ -1678,14 +1688,14 @@ function TabMethods:SelectSubtab(SubtabObj)
     if self.ActiveSubtab then
         local Old = self.ActiveSubtab
         Old.Page.Visible = false
-        Tween(Old.Button, 0.15, { BackgroundTransparency = 1 })
+        Tween(Old.Button, 0.15, { BackgroundColor3 = Theme.FrameActive, BackgroundTransparency = 1 })
         local Lbl = Old.Button:FindFirstChildOfClass("TextLabel")
         if Lbl then Tween(Lbl, 0.15, { TextColor3 = Theme.TextDisabled }) end
     end
 
     self.ActiveSubtab = SubtabObj
     SubtabObj.Page.Visible = true
-    Tween(SubtabObj.Button, 0.15, { BackgroundTransparency = 0.2 })
+    Tween(SubtabObj.Button, 0.15, { BackgroundColor3 = Theme.Accent, BackgroundTransparency = 0 })
     local Lbl = SubtabObj.Button:FindFirstChildOfClass("TextLabel")
     if Lbl then Tween(Lbl, 0.15, { TextColor3 = Theme.Text }) end
 end
@@ -1805,16 +1815,30 @@ function WindowMethods:_CreateTab(Config, Group)
     local Order = Group and (Group.BaseOrder + Group.TabCount) or (#self.Tabs)
     if Group then Group.TabCount = Group.TabCount + 1 end
 
+    local IsFirst = (#self.Tabs == 0)
+
     local TabBtn = Create("TextButton", {
         Size = UDim2.new(1, 0, 0, 30),
         BackgroundColor3 = Theme.FrameActive,
-        BackgroundTransparency = (#self.Tabs == 0) and 0.5 or 1,
+        BackgroundTransparency = IsFirst and 0.35 or 1,
         Text = "",
         AutoButtonColor = false,
         LayoutOrder = Order,
         Parent = self.SidebarTabList,
     })
     AddCorner(TabBtn, 5)
+
+    -- Left accent stripe (2px) — visible only when tab is selected
+    local Stripe = Create("Frame", {
+        Size = UDim2.new(0, 2, 1, -8),
+        Position = UDim2.new(0, 0, 0, 4),
+        BackgroundColor3 = Theme.Accent,
+        BorderSizePixel = 0,
+        Visible = IsFirst,
+        ZIndex = 2,
+        Parent = TabBtn,
+    })
+    AddCorner(Stripe, 1)
 
     -- Icon (text glyph or rbxassetid image)
     if Icon then
@@ -1847,7 +1871,7 @@ function WindowMethods:_CreateTab(Config, Group)
         Position = UDim2.fromOffset(35, 0),
         BackgroundTransparency = 1,
         Text = Name,
-        TextColor3 = (#self.Tabs == 0) and Theme.Text or Theme.TextDisabled,
+        TextColor3 = IsFirst and Theme.Text or Theme.TextDisabled,
         Font = Enum.Font.GothamMedium,
         TextSize = 13,
         TextXAlignment = Enum.TextXAlignment.Left,
@@ -1856,6 +1880,7 @@ function WindowMethods:_CreateTab(Config, Group)
 
     TabObj.Button = TabBtn
     TabObj.Label  = Label
+    TabObj.Stripe = Stripe
 
     table.insert(self.Tabs, TabObj)
 
@@ -1893,13 +1918,15 @@ function WindowMethods:SelectTab(TabObj)
         Old.SubtabBar.Visible  = false
         Tween(Old.Button, 0.15, { BackgroundTransparency = 1 })
         Tween(Old.Label,  0.15, { TextColor3 = Theme.TextDisabled })
+        if Old.Stripe then Old.Stripe.Visible = false end
     end
 
     self.ActiveTab = TabObj
     TabObj.TabContent.Visible = true
     TabObj.SubtabBar.Visible  = true
-    Tween(TabObj.Button, 0.15, { BackgroundTransparency = 0.5 })
+    Tween(TabObj.Button, 0.15, { BackgroundTransparency = 0.35 })
     Tween(TabObj.Label,  0.15, { TextColor3 = Theme.Text })
+    if TabObj.Stripe then TabObj.Stripe.Visible = true end
 end
 
 Library.WindowMethods = WindowMethods
@@ -2245,25 +2272,60 @@ function Library:CreateWindow(Config)
         Size = UDim2.fromOffset(100, 25),
         Position = UDim2.fromOffset(40, 15),
         BackgroundColor3 = Theme.Button,
-        Text = "💾 Save",
-        TextColor3 = Theme.Text,
-        Font = Enum.Font.GothamMedium,
-        TextSize = 12,
+        Text = "",
         AutoButtonColor = false,
         Parent = HeaderRow,
     })
     AddCorner(SaveBtn, 4)
-    AddStroke(SaveBtn, Theme.Border, 1, Theme.BorderAlpha)
+    AddStroke(SaveBtn, Theme.Border, 1, 0.5)
+
+    -- Save icon — small floppy-style rect drawn from primitives so we don't
+    -- depend on emoji/Font Awesome rendering
+    local SaveIcon = Create("Frame", {
+        Size = UDim2.fromOffset(10, 10),
+        Position = UDim2.new(0, 12, 0.5, -5),
+        BackgroundColor3 = Theme.Accent,
+        BorderSizePixel = 0,
+        Parent = SaveBtn,
+    })
+    AddCorner(SaveIcon, 2)
+    Create("Frame", {
+        Size = UDim2.fromOffset(6, 3),
+        Position = UDim2.fromOffset(2, 0),
+        BackgroundColor3 = Theme.GroupBoxBg,
+        BorderSizePixel = 0,
+        Parent = SaveIcon,
+    })
+    Create("Frame", {
+        Size = UDim2.fromOffset(6, 4),
+        Position = UDim2.fromOffset(2, 5),
+        BackgroundColor3 = Theme.White,
+        BackgroundTransparency = 0.3,
+        BorderSizePixel = 0,
+        Parent = SaveIcon,
+    })
+
+    Create("TextLabel", {
+        Size = UDim2.new(1, -28, 1, 0),
+        Position = UDim2.fromOffset(28, 0),
+        BackgroundTransparency = 1,
+        Text = "Save",
+        TextColor3 = Theme.Text,
+        Font = Enum.Font.GothamMedium,
+        TextSize = 12,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = SaveBtn,
+    })
 
     SaveBtn.MouseEnter:Connect(function()
         Tween(SaveBtn, 0.15, { BackgroundColor3 = Theme.ButtonHover })
         local S = SaveBtn:FindFirstChildOfClass("UIStroke")
-        if S then Tween(S, 0.15, { Color = Theme.Accent, Transparency = 0.5 }) end
+        if S then Tween(S, 0.15, { Color = Theme.Accent, Transparency = 0.2 }) end
     end)
     SaveBtn.MouseLeave:Connect(function()
         Tween(SaveBtn, 0.15, { BackgroundColor3 = Theme.Button })
         local S = SaveBtn:FindFirstChildOfClass("UIStroke")
-        if S then Tween(S, 0.15, { Color = Theme.Border, Transparency = Theme.BorderAlpha }) end
+        if S then Tween(S, 0.15, { Color = Theme.Border, Transparency = 0.5 }) end
     end)
     SaveBtn.MouseButton1Click:Connect(function()
         Tween(SaveBtn, 0.05, { BackgroundColor3 = Theme.ButtonActive })
