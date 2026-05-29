@@ -1,74 +1,79 @@
 --[[
-    ZyrexLib - Luau ImGui-style UI library
-    Recreated from the provided C++ ImGui Zyrex menu design.
-
+    ZyrexLib_OneToOne.lua
+    Standalone Luau UI library recreated from Zyrex C++ Dear ImGui menu.
     Usage:
-    local ZyrexLib = loadstring(game:HttpGet("https://your-raw-url/ZyrexLib.lua"))()
-    local Window = ZyrexLib:CreateWindow({ Title = "Zyrex", Size = UDim2.fromOffset(760, 554) })
-]]
+        local ZyrexLib = loadstring(game:HttpGet("RAW_URL"))()
+        local Window = ZyrexLib:CreateWindow({Title="Zyrex"})
+        local Combat = Window:AddTab("Combat", "target")
+        local Legit = Combat:AddSubTab("Legit", "verified")
+        local Main = Legit:AddLeftGroupbox("Legit")
+        Main:AddToggle("Enabled", {Default=false, Callback=function(v) print(v) end})
+--]]
 
-local ZyrexLib = {}
-ZyrexLib.__index = ZyrexLib
-
---// Services
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
-local CoreGui = (typeof(cloneref) == "function" and cloneref(game:GetService("CoreGui"))) or game:GetService("CoreGui")
 
---// Theme based on C++ ImGui style colors
+local CoreGui = game:GetService("CoreGui")
+local LocalPlayer = Players.LocalPlayer
+
+local ZyrexLib = {
+    Version = "1.2.3-luau",
+    Windows = {},
+    Flags = {},
+    Options = {},
+    Connections = {},
+    Unloaded = false,
+}
+
 local Theme = {
     WindowBg = Color3.fromRGB(10, 7, 8),
     TitleBg = Color3.fromRGB(18, 15, 17),
     ChildBg = Color3.fromRGB(18, 15, 17),
-    ChildBg2 = Color3.fromRGB(14, 12, 13),
+    ChildBg2 = Color3.fromRGB(16, 13, 15),
     PopupBg = Color3.fromRGB(18, 15, 17),
+    FrameBg = Color3.fromRGB(26, 22, 23),
+    FrameBgHovered = Color3.fromRGB(34, 30, 31),
+    FrameBgActive = Color3.fromRGB(21, 18, 19),
     Border = Color3.fromRGB(34, 28, 30),
-    BorderSoft = Color3.fromRGB(48, 40, 43),
     Text = Color3.fromRGB(218, 218, 218),
     TextDisabled = Color3.fromRGB(85, 85, 85),
-    Frame = Color3.fromRGB(26, 22, 23),
-    FrameHover = Color3.fromRGB(34, 30, 31),
-    FrameActive = Color3.fromRGB(21, 18, 19),
-    Tab = Color3.fromRGB(14, 12, 13),
-    TabHover = Color3.fromRGB(26, 22, 23),
-    TabActive = Color3.fromRGB(21, 18, 19),
     Accent = Color3.fromRGB(87, 190, 234),
-    AccentHover = Color3.fromRGB(0, 122, 200),
+    AccentHovered = Color3.fromRGB(0, 122, 200),
     AccentActive = Color3.fromRGB(0, 122, 200),
-    White = Color3.fromRGB(255, 255, 255),
-    Black = Color3.fromRGB(0, 0, 0),
+    White = Color3.fromRGB(255,255,255),
+    Black = Color3.fromRGB(0,0,0),
+}
+ZyrexLib.Theme = Theme
+
+local IconMap = {
+    target = "✥", verified = "✓", click = "◉", cursor = "➤", clock = "◷",
+    eye = "◉", globe = "◎", location = "◆", objects = "▦", pulse = "∿",
+    palette = "✿", crime = "♢", knife = "⌁", wrench = "⚙", running = "↗",
+    evil = "☠", misc = "⌘", code = "</>", settings = "⚙", clear = "×", open = "▣",
+    save = "▤", play = "▶"
 }
 
-ZyrexLib.Theme = Theme
-ZyrexLib.Toggles = {}
-ZyrexLib.Options = {}
-ZyrexLib.Windows = {}
-ZyrexLib.Connections = {}
-ZyrexLib.OpenDropdown = nil
-ZyrexLib.KeyListening = nil
+local function rgb(r,g,b) return Color3.fromRGB(r,g,b) end
+local function clamp(v,a,b) return math.max(a, math.min(b, v)) end
+local function floor(v) return math.floor(v + 0.5) end
 
---// Helpers
 local function Create(class, props, children)
-    local inst = Instance.new(class)
-    for k, v in pairs(props or {}) do
-        if k ~= "Parent" then
-            inst[k] = v
-        end
+    local obj = Instance.new(class)
+    for k,v in pairs(props or {}) do
+        if k ~= "Parent" then obj[k] = v end
     end
-    for _, child in ipairs(children or {}) do
-        child.Parent = inst
+    if children then
+        for _, child in ipairs(children) do child.Parent = obj end
     end
-    if props and props.Parent then
-        inst.Parent = props.Parent
-    end
-    return inst
+    if props and props.Parent then obj.Parent = props.Parent end
+    return obj
 end
 
-local function Corner(parent, radius)
-    return Create("UICorner", { CornerRadius = UDim.new(0, radius or 4), Parent = parent })
+local function Corner(parent, r)
+    return Create("UICorner", {CornerRadius = UDim.new(0, r or 4), Parent = parent})
 end
 
 local function Stroke(parent, color, thickness, transparency)
@@ -81,909 +86,502 @@ local function Stroke(parent, color, thickness, transparency)
     })
 end
 
-local function Padding(parent, l, t, r, b)
+local function Padding(parent, l,t,r,b)
     return Create("UIPadding", {
-        PaddingLeft = UDim.new(0, l or 0),
-        PaddingTop = UDim.new(0, t or 0),
-        PaddingRight = UDim.new(0, r or 0),
-        PaddingBottom = UDim.new(0, b or 0),
-        Parent = parent,
+        PaddingLeft = UDim.new(0,l or 0), PaddingTop = UDim.new(0,t or 0),
+        PaddingRight = UDim.new(0,r or 0), PaddingBottom = UDim.new(0,b or 0), Parent = parent
     })
 end
 
-local function List(parent, direction, padding)
+local function List(parent, pad, dir)
     return Create("UIListLayout", {
-        FillDirection = direction or Enum.FillDirection.Vertical,
+        Padding = UDim.new(0, pad or 0),
         SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, padding or 8),
-        Parent = parent,
+        FillDirection = dir or Enum.FillDirection.Vertical,
+        Parent = parent
     })
 end
 
-local function Tween(inst, time, props)
-    local tw = TweenService:Create(inst, TweenInfo.new(time or 0.14, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), props)
-    tw:Play()
-    return tw
+local function Tween(obj, time, props)
+    local t = TweenService:Create(obj, TweenInfo.new(time or 0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props)
+    t:Play()
+    return t
 end
 
-local function AddConnection(conn)
-    table.insert(ZyrexLib.Connections, conn)
-    return conn
+local function Connect(sig, fn)
+    local c = sig:Connect(fn)
+    table.insert(ZyrexLib.Connections, c)
+    return c
+end
+
+local function TextBounds(text, size, font)
+    local ok, res = pcall(function()
+        return TextService:GetTextSize(tostring(text), size, font or Enum.Font.SourceSansSemibold, Vector2.new(9999, 9999))
+    end)
+    return ok and res or Vector2.new(60, size)
 end
 
 local function MakeDraggable(frame, handle)
-    local dragging, dragInput, dragStart, startPos
-    handle.InputBegan:Connect(function(input)
+    local dragging, dragStart, startPos, dragInput
+    Connect(handle.InputBegan, function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             dragStart = input.Position
             startPos = frame.Position
             input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
             end)
         end
     end)
-    handle.InputChanged:Connect(function(input)
+    Connect(handle.InputChanged, function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             dragInput = input
         end
     end)
-    AddConnection(UserInputService.InputChanged:Connect(function(input)
+    Connect(UserInputService.InputChanged, function(input)
         if dragging and input == dragInput then
             local delta = input.Position - dragStart
             frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
-    end))
+    end)
 end
 
-local function State(default, callback)
-    local obj = { Value = default, Callback = callback, Changed = {} }
-    function obj:SetValue(value)
-        if self.Value == value then return end
-        self.Value = value
-        if self.Callback then task.spawn(self.Callback, value) end
-        for _, fn in ipairs(self.Changed) do task.spawn(fn, value) end
+local function NewState(key, default, callback)
+    local state = {Value = default, Callbacks = {}}
+    if callback then table.insert(state.Callbacks, callback) end
+    function state:Set(v)
+        self.Value = v
+        ZyrexLib.Flags[key] = v
+        for _,cb in ipairs(self.Callbacks) do task.spawn(cb, v) end
     end
-    function obj:OnChanged(fn)
-        table.insert(self.Changed, fn)
-        task.spawn(fn, self.Value)
+    function state:Get() return self.Value end
+    function state:OnChanged(cb)
+        table.insert(self.Callbacks, cb)
+        task.spawn(cb, self.Value)
         return self
     end
-    return obj
+    ZyrexLib.Options[key] = state
+    ZyrexLib.Flags[key] = default
+    return state
 end
 
-local function Text(parent, txt, size, bold, color)
-    return Create("TextLabel", {
-        BackgroundTransparency = 1,
-        Text = txt or "",
-        TextColor3 = color or Theme.Text,
-        Font = bold and Enum.Font.GothamSemibold or Enum.Font.Gotham,
-        TextSize = size or 13,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextYAlignment = Enum.TextYAlignment.Center,
-        Parent = parent,
+local function SectionText(parent, text)
+    local row = Create("Frame", {Size = UDim2.new(1,0,0,18), BackgroundTransparency = 1, Parent = parent})
+    local label = Create("TextLabel", {
+        Size = UDim2.new(0,0,1,0), AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundColor3 = Theme.ChildBg, BorderSizePixel = 0,
+        Text = text, TextColor3 = Theme.TextDisabled, Font = Enum.Font.SourceSansSemibold,
+        TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = parent.ZIndex + 2, Parent = row
     })
+    Padding(label, 0,0,8,0)
+    Create("Frame", {Size = UDim2.new(1,0,0,1), Position = UDim2.new(0,0,.5,0), BackgroundColor3 = Theme.Border, BorderSizePixel = 0, ZIndex = parent.ZIndex + 1, Parent = row})
+    return row
 end
 
-local WindowMethods = {}
-WindowMethods.__index = WindowMethods
-local TabMethods = {}
-TabMethods.__index = TabMethods
-local PageMethods = {}
-PageMethods.__index = PageMethods
 local GroupboxMethods = {}
 GroupboxMethods.__index = GroupboxMethods
 
-function ZyrexLib:Unload()
-    for _, c in ipairs(self.Connections) do
-        if typeof(c) == "RBXScriptConnection" then pcall(function() c:Disconnect() end) end
-    end
-    for _, win in ipairs(self.Windows) do
-        if win.Gui then win.Gui:Destroy() end
-    end
-    table.clear(self.Windows)
-    table.clear(self.Connections)
-end
-
-function ZyrexLib:SetThemeColor(name, color)
-    if Theme[name] and typeof(color) == "Color3" then
-        Theme[name] = color
-    end
-end
-
-function ZyrexLib:CreateWindow(config)
-    config = config or {}
-    local title = config.Title or "Zyrex"
-    local size = config.Size or UDim2.fromOffset(760, 554)
-    local toggleKey = config.ToggleKey or Enum.KeyCode.RightShift
-
-    local gui = Create("ScreenGui", {
-        Name = config.Name or "ZyrexLib",
-        IgnoreGuiInset = true,
-        ResetOnSpawn = false,
-        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-    })
-    pcall(function() gui.Parent = CoreGui end)
-    if not gui.Parent then gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui") end
-
-    local root = Create("Frame", {
-        Size = size,
-        Position = UDim2.new(0.5, -size.X.Offset / 2, 0.5, -size.Y.Offset / 2),
-        BackgroundTransparency = 1,
-        Parent = gui,
-    })
-
-    local shadow = Create("ImageLabel", {
-        Size = UDim2.new(1, 36, 1, 36),
-        Position = UDim2.fromOffset(-18, -18),
-        BackgroundTransparency = 1,
-        Image = "rbxassetid://5554236805",
-        ImageColor3 = Theme.Black,
-        ImageTransparency = 0.35,
-        ScaleType = Enum.ScaleType.Slice,
-        SliceCenter = Rect.new(23, 23, 277, 277),
-        Parent = root,
-    })
-
-    local main = Create("Frame", {
-        Size = UDim2.fromScale(1, 1),
-        BackgroundColor3 = Theme.WindowBg,
-        ClipsDescendants = true,
-        Parent = root,
-    })
-    Corner(main, 7)
-    Stroke(main, Theme.Border, 1)
-
-    local header = Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 48),
-        BackgroundColor3 = Theme.TitleBg,
-        BorderSizePixel = 0,
-        Parent = main,
-    })
-    Corner(header, 7)
-
-    local headerMask = Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 9),
-        Position = UDim2.new(0, 0, 1, -9),
-        BackgroundColor3 = Theme.TitleBg,
-        BorderSizePixel = 0,
-        Parent = header,
-    })
-
-    local headerLine = Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 1),
-        Position = UDim2.new(0, 0, 1, -1),
-        BackgroundColor3 = Theme.Border,
-        BorderSizePixel = 0,
-        Parent = header,
-    })
-
-    local titleLabel = Text(header, title, 16, true, Theme.Text)
-    titleLabel.Size = UDim2.new(1, -80, 1, 0)
-    titleLabel.Position = UDim2.fromOffset(16, 0)
-
-    local close = Create("TextButton", {
-        Size = UDim2.fromOffset(28, 28),
-        Position = UDim2.new(1, -40, 0.5, -14),
-        BackgroundColor3 = Theme.Frame,
-        Text = "×",
-        TextColor3 = Theme.Text,
-        Font = Enum.Font.GothamSemibold,
-        TextSize = 18,
-        AutoButtonColor = false,
-        Parent = header,
-    })
-    Corner(close, 4)
-    Stroke(close, Theme.Border)
-    close.MouseEnter:Connect(function() Tween(close, .12, { BackgroundColor3 = Theme.FrameHover, TextColor3 = Theme.Accent }) end)
-    close.MouseLeave:Connect(function() Tween(close, .12, { BackgroundColor3 = Theme.Frame, TextColor3 = Theme.Text }) end)
-    close.MouseButton1Click:Connect(function() gui.Enabled = false end)
-
-    local content = Create("Frame", {
-        Size = UDim2.new(1, 0, 1, -48),
-        Position = UDim2.fromOffset(0, 48),
-        BackgroundColor3 = Theme.WindowBg,
-        BorderSizePixel = 0,
-        Parent = main,
-    })
-    Padding(content, 16, 16, 16, 16)
-
-    local topbar = Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 42),
-        BackgroundTransparency = 1,
-        Parent = content,
-    })
-
-    local topList = List(topbar, Enum.FillDirection.Horizontal, 8)
-    topList.VerticalAlignment = Enum.VerticalAlignment.Center
-
-    local body = Create("Frame", {
-        Size = UDim2.new(1, 0, 1, -58),
-        Position = UDim2.fromOffset(0, 58),
-        BackgroundTransparency = 1,
-        Parent = content,
-    })
-
-    local win = setmetatable({
-        Gui = gui,
-        Root = root,
-        Main = main,
-        Header = header,
-        Topbar = topbar,
-        Body = body,
-        Title = title,
-        Tabs = {},
-        ActiveTab = nil,
-        ToggleKey = toggleKey,
-    }, WindowMethods)
-
-    table.insert(ZyrexLib.Windows, win)
-    MakeDraggable(root, header)
-
-    AddConnection(UserInputService.InputBegan:Connect(function(input, gpe)
-        if gpe then return end
-        if input.KeyCode == toggleKey then
-            gui.Enabled = not gui.Enabled
-        end
-    end))
-
-    return win
-end
-
-function WindowMethods:SetVisible(v)
-    self.Gui.Enabled = v
-end
-
-function WindowMethods:AddTab(name, icon)
-    local index = #self.Tabs + 1
-    local tab = setmetatable({
-        Window = self,
-        Name = name,
-        Icon = icon or "•",
-        SubTabs = {},
-        ActivePage = nil,
-        Pages = {},
-    }, TabMethods)
-
-    local btn = Create("TextButton", {
-        Size = UDim2.fromOffset(name == "Settings" and 42 or 118, 34),
-        BackgroundColor3 = index == 1 and Theme.TabActive or Theme.Tab,
-        Text = "",
-        AutoButtonColor = false,
-        Parent = self.Topbar,
-    })
-    Corner(btn, 4)
-    Stroke(btn, index == 1 and Theme.BorderSoft or Theme.Border, 1)
-
-    local iconLabel = Text(btn, icon or "•", 15, true, index == 1 and Theme.Accent or Theme.TextDisabled)
-    iconLabel.Size = UDim2.fromOffset(26, 34)
-    iconLabel.Position = UDim2.fromOffset(10, 0)
-    iconLabel.TextXAlignment = Enum.TextXAlignment.Center
-
-    local label = Text(btn, name == "Settings" and "" or name, 13, true, index == 1 and Theme.Text or Theme.TextDisabled)
-    label.Size = UDim2.new(1, -38, 1, 0)
-    label.Position = UDim2.fromOffset(36, 0)
-
-    tab.Button = btn
-    tab.ButtonLabel = label
-    tab.ButtonIcon = iconLabel
-
-    btn.MouseButton1Click:Connect(function() self:SelectTab(tab) end)
-    btn.MouseEnter:Connect(function()
-        if self.ActiveTab ~= tab then
-            Tween(btn, .12, { BackgroundColor3 = Theme.TabHover })
-            Tween(label, .12, { TextColor3 = Theme.Text })
-            Tween(iconLabel, .12, { TextColor3 = Theme.Accent })
-        end
-    end)
-    btn.MouseLeave:Connect(function()
-        if self.ActiveTab ~= tab then
-            Tween(btn, .12, { BackgroundColor3 = Theme.Tab })
-            Tween(label, .12, { TextColor3 = Theme.TextDisabled })
-            Tween(iconLabel, .12, { TextColor3 = Theme.TextDisabled })
-        end
-    end)
-
-    table.insert(self.Tabs, tab)
-    if index == 1 then
-        self.ActiveTab = tab
-        task.defer(function() self:SelectTab(tab) end)
-    end
-    return tab
-end
-
-function WindowMethods:SelectTab(tab)
-    if self.ActiveTab and self.ActiveTab ~= tab then
-        local old = self.ActiveTab
-        if old.Container then old.Container.Visible = false end
-        Tween(old.Button, .12, { BackgroundColor3 = Theme.Tab })
-        Tween(old.ButtonLabel, .12, { TextColor3 = Theme.TextDisabled })
-        Tween(old.ButtonIcon, .12, { TextColor3 = Theme.TextDisabled })
-    end
-    self.ActiveTab = tab
-    if not tab.Container then tab:_BuildContainer() end
-    tab.Container.Visible = true
-    Tween(tab.Button, .12, { BackgroundColor3 = Theme.TabActive })
-    Tween(tab.ButtonLabel, .12, { TextColor3 = Theme.Text })
-    Tween(tab.ButtonIcon, .12, { TextColor3 = Theme.Accent })
-end
-
-function TabMethods:_BuildContainer()
-    local container = Create("Frame", {
-        Size = UDim2.fromScale(1, 1),
-        BackgroundTransparency = 1,
-        Visible = false,
-        Parent = self.Window.Body,
-    })
-    self.Container = container
-
-    local sidebarWidth = (#self.SubTabs > 0) and 180 or 0
-    if sidebarWidth > 0 then
-        local sidebar = Create("Frame", {
-            Size = UDim2.new(0, sidebarWidth, 1, 0),
-            BackgroundColor3 = Theme.ChildBg,
-            Parent = container,
-        })
-        Corner(sidebar, 5)
-        Stroke(sidebar, Theme.Border)
-        Padding(sidebar, 10, 10, 10, 10)
-        List(sidebar, Enum.FillDirection.Vertical, 5)
-        self.Sidebar = sidebar
-    end
-
-    local pageHolder = Create("Frame", {
-        Size = UDim2.new(1, -sidebarWidth - (sidebarWidth > 0 and 12 or 0), 1, 0),
-        Position = UDim2.fromOffset(sidebarWidth > 0 and sidebarWidth + 12 or 0, 0),
-        BackgroundTransparency = 1,
-        Parent = container,
-    })
-    self.PageHolder = pageHolder
-
-    if #self.SubTabs == 0 then
-        local page = self:_CreatePage(self.Name, nil)
-        page.Frame.Visible = true
-        self.ActivePage = page
-    else
-        for i, st in ipairs(self.SubTabs) do
-            st:_MountButton(i)
-        end
-        self:SelectPage(self.SubTabs[1])
-    end
-end
-
-function TabMethods:_CreatePage(name, icon)
-    local page = setmetatable({ Tab = self, Name = name, Icon = icon, Groupboxes = {} }, PageMethods)
-    local frame = Create("Frame", {
-        Size = UDim2.fromScale(1, 1),
-        BackgroundTransparency = 1,
-        Visible = false,
-        Parent = self.PageHolder,
-    })
-    page.Frame = frame
-
-    local left = Create("ScrollingFrame", {
-        Size = UDim2.new(0.5, -8, 1, 0),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        CanvasSize = UDim2.fromOffset(0, 0),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        ScrollBarThickness = 3,
-        ScrollBarImageColor3 = Theme.BorderSoft,
-        Parent = frame,
-    })
-    Padding(left, 0, 0, 4, 0)
-    List(left, Enum.FillDirection.Vertical, 12)
-
-    local right = Create("ScrollingFrame", {
-        Size = UDim2.new(0.5, -8, 1, 0),
-        Position = UDim2.new(0.5, 8, 0, 0),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        CanvasSize = UDim2.fromOffset(0, 0),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        ScrollBarThickness = 3,
-        ScrollBarImageColor3 = Theme.BorderSoft,
-        Parent = frame,
-    })
-    Padding(right, 4, 0, 0, 0)
-    List(right, Enum.FillDirection.Vertical, 12)
-
-    page.Left = left
-    page.Right = right
-    table.insert(self.Pages, page)
-    return page
-end
-
-function TabMethods:AddSubTab(name, icon)
-    local page = self:_CreatePage(name, icon or "•")
-    table.insert(self.SubTabs, page)
-    if self.Container and self.Sidebar then page:_MountButton(#self.SubTabs) end
-    return page
-end
-
-function TabMethods:GetPage()
-    if #self.Pages == 0 then
-        if not self.Container then self:_BuildContainer() end
-    end
-    return self.Pages[1]
-end
-
-function TabMethods:SelectPage(page)
-    if self.ActivePage and self.ActivePage ~= page then
-        self.ActivePage.Frame.Visible = false
-        if self.ActivePage.Button then
-            Tween(self.ActivePage.Button, .12, { BackgroundColor3 = Theme.ChildBg })
-            Tween(self.ActivePage.ButtonLabel, .12, { TextColor3 = Theme.TextDisabled })
-            Tween(self.ActivePage.ButtonIcon, .12, { TextColor3 = Theme.TextDisabled })
-        end
-    end
-    self.ActivePage = page
-    page.Frame.Visible = true
-    if page.Button then
-        Tween(page.Button, .12, { BackgroundColor3 = Theme.Frame })
-        Tween(page.ButtonLabel, .12, { TextColor3 = Theme.Text })
-        Tween(page.ButtonIcon, .12, { TextColor3 = Theme.Accent })
-    end
-end
-
-function PageMethods:_MountButton(order)
-    if not self.Tab.Sidebar or self.Button then return end
-    local btn = Create("TextButton", {
-        Size = UDim2.new(1, 0, 0, 40),
-        LayoutOrder = order,
-        BackgroundColor3 = order == 1 and Theme.Frame or Theme.ChildBg,
-        Text = "",
-        AutoButtonColor = false,
-        Parent = self.Tab.Sidebar,
-    })
-    Corner(btn, 4)
-    Stroke(btn, Theme.Border)
-
-    local icon = Text(btn, self.Icon or "•", 15, true, order == 1 and Theme.Accent or Theme.TextDisabled)
-    icon.Size = UDim2.fromOffset(30, 40)
-    icon.Position = UDim2.fromOffset(8, 0)
-    icon.TextXAlignment = Enum.TextXAlignment.Center
-
-    local label = Text(btn, self.Name, 13, true, order == 1 and Theme.Text or Theme.TextDisabled)
-    label.Size = UDim2.new(1, -46, 1, 0)
-    label.Position = UDim2.fromOffset(42, 0)
-
-    self.Button = btn
-    self.ButtonLabel = label
-    self.ButtonIcon = icon
-    btn.MouseButton1Click:Connect(function() self.Tab:SelectPage(self) end)
-end
-
-function PageMethods:AddGroupbox(name, side)
-    local parent = (side == "Right") and self.Right or self.Left
-    local box = setmetatable({ Page = self, Name = name }, GroupboxMethods)
-
-    local frame = Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 0),
-        AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundColor3 = Theme.ChildBg,
-        Parent = parent,
-    })
-    Corner(frame, 5)
-    Stroke(frame, Theme.Border)
-
-    local top = Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 34),
-        BackgroundColor3 = Theme.ChildBg2,
-        BorderSizePixel = 0,
-        Parent = frame,
-    })
-    Corner(top, 5)
-    local topMask = Create("Frame", { Size = UDim2.new(1,0,0,8), Position = UDim2.new(0,0,1,-8), BackgroundColor3 = Theme.ChildBg2, BorderSizePixel = 0, Parent = top })
-    local heading = Text(top, name or "Groupbox", 14, true, Theme.Text)
-    heading.Size = UDim2.new(1, -24, 1, 0)
-    heading.Position = UDim2.fromOffset(14, 0)
-
-    local container = Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 0),
-        Position = UDim2.fromOffset(0, 34),
-        AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundTransparency = 1,
-        Parent = frame,
-    })
-    Padding(container, 14, 12, 14, 14)
-    List(container, Enum.FillDirection.Vertical, 10)
-
-    box.Frame = frame
-    box.Container = container
-    table.insert(self.Groupboxes, box)
-    return box
-end
-
-function PageMethods:AddLeftGroupbox(name) return self:AddGroupbox(name, "Left") end
-function PageMethods:AddRightGroupbox(name) return self:AddGroupbox(name, "Right") end
-
-function GroupboxMethods:_Row(height)
-    local row = Create("Frame", {
-        Size = UDim2.new(1, 0, 0, height or 24),
-        BackgroundTransparency = 1,
-        Parent = self.Container,
-    })
+function GroupboxMethods:_Row(h)
+    local row = Create("Frame", {Size = UDim2.new(1,0,0,h or 24), BackgroundTransparency = 1, Parent = self.Container})
     return row
 end
 
 function GroupboxMethods:AddSeparator(text)
-    local row = self:_Row(20)
-    local line = Create("Frame", { Size = UDim2.new(1,0,0,1), Position = UDim2.new(0,0,0.5,0), BackgroundColor3 = Theme.Border, BorderSizePixel = 0, Parent = row })
-    if text then
-        local label = Text(row, "  " .. text .. "  ", 12, true, Theme.Accent)
-        label.Size = UDim2.fromOffset(TextService:GetTextSize(text, 12, Enum.Font.GothamSemibold, Vector2.new(999, 20)).X + 20, 20)
-        label.BackgroundColor3 = Theme.ChildBg
-        label.BackgroundTransparency = 0
-        label.Position = UDim2.fromOffset(0, 0)
-    end
+    return SectionText(self.Container, text or "Section")
 end
 
 function GroupboxMethods:AddLabel(text)
     local row = self:_Row(20)
-    local lbl = Text(row, text, 13, false, Theme.TextDisabled)
-    lbl.Size = UDim2.fromScale(1, 1)
-    return { SetText = function(_, v) lbl.Text = v end, Label = lbl }
+    local l = Create("TextLabel", {Size=UDim2.fromScale(1,1), BackgroundTransparency=1, Text=text or "", TextColor3=Theme.Text, Font=Enum.Font.SourceSansSemibold, TextSize=13, TextXAlignment=Enum.TextXAlignment.Left, Parent=row})
+    return {SetText=function(_,v) l.Text=v end, Frame=row}
 end
 
-function GroupboxMethods:AddButton(config)
-    config = config or {}
+function GroupboxMethods:AddToggle(key, cfg)
+    cfg = cfg or {}
+    local text = cfg.Text or key
+    local default = cfg.Default or false
+    local state = NewState(key, default, cfg.Callback)
+    local row = self:_Row(24)
+    local box = Create("TextButton", {Size=UDim2.fromOffset(16,16), Position=UDim2.new(0,0,.5,-8), BackgroundColor3=default and Theme.Accent or Theme.FrameBg, AutoButtonColor=false, Text="", Parent=row})
+    Corner(box, 3); Stroke(box, Theme.Border)
+    local check = Create("TextLabel", {Size=UDim2.fromScale(1,1), BackgroundTransparency=1, Text="✓", TextColor3=Theme.White, Font=Enum.Font.SourceSansBold, TextSize=12, Visible=default, Parent=box})
+    local label = Create("TextLabel", {Size=UDim2.new(1,-24,1,0), Position=UDim2.fromOffset(24,0), BackgroundTransparency=1, Text=text, TextColor3=default and Theme.Text or Theme.Text, Font=Enum.Font.SourceSansSemibold, TextSize=13, TextXAlignment=Enum.TextXAlignment.Left, Parent=row})
+    local click = Create("TextButton", {Size=UDim2.fromScale(1,1), BackgroundTransparency=1, Text="", AutoButtonColor=false, Parent=row})
+    local obj = {State=state, Frame=row}
+    local function render(v)
+        Tween(box,.12,{BackgroundColor3=v and Theme.Accent or Theme.FrameBg})
+        check.Visible = v
+    end
+    function obj:SetValue(v) state:Set(v); render(v); return self end
+    function obj:Get() return state:Get() end
+    function obj:OnChanged(cb) state:OnChanged(cb); return self end
+    function obj:AddColorPicker(k, c) return self end -- compatibility no-op on toggle row
+    function obj:AddKeyPicker(k, c) return self end
+    click.MouseButton1Click:Connect(function() obj:SetValue(not state.Value) end)
+    box.MouseButton1Click:Connect(function() obj:SetValue(not state.Value) end)
+    return obj
+end
+
+function GroupboxMethods:AddCheckbox(key,cfg) return self:AddToggle(key,cfg) end
+
+function GroupboxMethods:AddHeaderToggle(key, cfg)
+    cfg = cfg or {}
+    local text = cfg.Text or key
+    local state = NewState(key, cfg.Default or false, cfg.Callback)
+    self.Title.Text = text
+    local toggle = Create("TextButton", {Size=UDim2.fromOffset(40,20), Position=UDim2.new(1,-44,0,10), BackgroundColor3=state.Value and Theme.AccentHovered or Theme.FrameBg, Text="", AutoButtonColor=false, Parent=self.Card})
+    Corner(toggle, 10); Stroke(toggle, Theme.Border)
+    local knob = Create("Frame", {Size=UDim2.fromOffset(14,14), Position=state.Value and UDim2.new(1,-17,.5,-7) or UDim2.new(0,3,.5,-7), BackgroundColor3=Theme.Text, BorderSizePixel=0, Parent=toggle})
+    Corner(knob, 7)
+    local obj = {State=state, Frame=toggle}
+    local function render(v)
+        Tween(toggle,.12,{BackgroundColor3=v and Theme.AccentHovered or Theme.FrameBg})
+        Tween(knob,.12,{Position=v and UDim2.new(1,-17,.5,-7) or UDim2.new(0,3,.5,-7)})
+    end
+    function obj:SetValue(v) state:Set(v); render(v); return self end
+    function obj:Get() return state:Get() end
+    function obj:OnChanged(cb) state:OnChanged(cb); return self end
+    toggle.MouseButton1Click:Connect(function() obj:SetValue(not state.Value) end)
+    return obj
+end
+
+function GroupboxMethods:AddSlider(key, cfg)
+    cfg = cfg or {}
+    local min, max = cfg.Min or 0, cfg.Max or 100
+    local default = cfg.Default or min
+    local rounding = cfg.Rounding or 0
+    local suffix = cfg.Suffix or ""
+    local state = NewState(key, default, cfg.Callback)
+    local row = self:_Row(42)
+    local label = Create("TextLabel", {Size=UDim2.new(.65,0,0,18), BackgroundTransparency=1, Text=cfg.Text or key, TextColor3=Theme.Text, Font=Enum.Font.SourceSansSemibold, TextSize=13, TextXAlignment=Enum.TextXAlignment.Left, Parent=row})
+    local val = Create("TextLabel", {Size=UDim2.new(.35,0,0,18), Position=UDim2.new(.65,0,0,0), BackgroundTransparency=1, TextColor3=Theme.TextDisabled, Font=Enum.Font.SourceSansSemibold, TextSize=12, TextXAlignment=Enum.TextXAlignment.Right, Parent=row})
+    local bar = Create("Frame", {Size=UDim2.new(1,0,0,7), Position=UDim2.new(0,0,0,25), BackgroundColor3=Theme.FrameBg, BorderSizePixel=0, Parent=row})
+    Corner(bar, 4)
+    local fill = Create("Frame", {Size=UDim2.fromScale(0,1), BackgroundColor3=Theme.Accent, BorderSizePixel=0, Parent=bar})
+    Corner(fill, 4)
+    local knob = Create("Frame", {Size=UDim2.fromOffset(14,14), AnchorPoint=Vector2.new(.5,.5), Position=UDim2.new(0,0,.5,0), BackgroundColor3=Theme.Text, BorderSizePixel=0, Parent=bar})
+    Corner(knob, 7); Stroke(knob, rgb(120,120,120), 1, .2)
+    local btn = Create("TextButton", {Size=UDim2.new(1,0,0,22), Position=UDim2.new(0,0,0,18), BackgroundTransparency=1, Text="", AutoButtonColor=false, Parent=row})
+    local dragging = false
+    local function fmt(v)
+        if rounding == 0 then return tostring(math.floor(v))..suffix end
+        return string.format("%."..rounding.."f", v)..suffix
+    end
+    local function setFromPercent(p)
+        p = clamp(p,0,1)
+        local value = min + (max-min)*p
+        if rounding == 0 then value = floor(value) else local f=10^rounding; value=math.floor(value*f+.5)/f end
+        local sp = (value-min)/(max-min)
+        fill.Size = UDim2.fromScale(sp,1)
+        knob.Position = UDim2.new(sp,0,.5,0)
+        val.Text = fmt(value)
+        state:Set(value)
+    end
+    function state:SetValue(v) setFromPercent((v-min)/(max-min)) end
+    setFromPercent((default-min)/(max-min))
+    btn.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true; setFromPercent((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X) end end)
+    btn.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end end)
+    Connect(UserInputService.InputChanged,function(i) if dragging and i.UserInputType==Enum.UserInputType.MouseMovement then setFromPercent((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X) end end)
+    return state
+end
+
+function GroupboxMethods:AddButton(textOrCfg, fn)
+    local cfg = type(textOrCfg)=="table" and textOrCfg or {Text=textOrCfg, Func=fn}
     local row = self:_Row(34)
-    local btn = Create("TextButton", {
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundColor3 = Theme.Frame,
-        Text = config.Text or "Button",
-        TextColor3 = Theme.Text,
-        Font = Enum.Font.GothamSemibold,
-        TextSize = 13,
-        AutoButtonColor = false,
-        Parent = row,
-    })
-    Corner(btn, 4)
-    Stroke(btn, Theme.Border)
-    btn.MouseEnter:Connect(function() Tween(btn, .12, { BackgroundColor3 = Theme.FrameHover }) end)
-    btn.MouseLeave:Connect(function() Tween(btn, .12, { BackgroundColor3 = Theme.Frame }) end)
-    btn.MouseButton1Click:Connect(function()
-        Tween(btn, .06, { BackgroundColor3 = Theme.FrameActive })
-        task.delay(.08, function() if btn.Parent then Tween(btn, .12, { BackgroundColor3 = Theme.Frame }) end end)
-        if config.Callback then task.spawn(config.Callback) end
-    end)
+    local btn = Create("TextButton", {Size=UDim2.new(1,0,0,30), BackgroundColor3=Theme.FrameBg, Text=cfg.Text or "Button", TextColor3=Theme.Text, Font=Enum.Font.SourceSansSemibold, TextSize=13, AutoButtonColor=false, Parent=row})
+    Corner(btn,4); Stroke(btn, Theme.Border)
+    btn.MouseEnter:Connect(function() Tween(btn,.12,{BackgroundColor3=Theme.FrameBgHovered}) end)
+    btn.MouseLeave:Connect(function() Tween(btn,.12,{BackgroundColor3=Theme.FrameBg}) end)
+    btn.MouseButton1Click:Connect(function() if cfg.Func then task.spawn(cfg.Func) elseif cfg.Callback then task.spawn(cfg.Callback) end end)
     return btn
 end
 
-function GroupboxMethods:AddToggle(key, config)
-    config = config or {}
-    local default = config.Default or false
-    local row = self:_Row(26)
-    local st = State(default, config.Callback)
-    ZyrexLib.Toggles[key] = st
-
-    local box = Create("Frame", {
-        Size = UDim2.fromOffset(18, 18),
-        Position = UDim2.new(0, 0, 0.5, -9),
-        BackgroundColor3 = default and Theme.Accent or Theme.Frame,
-        Parent = row,
-    })
-    Corner(box, 4)
-    Stroke(box, default and Theme.AccentHover or Theme.Border)
-
-    local check = Text(box, "✓", 13, true, Theme.White)
-    check.Size = UDim2.fromScale(1, 1)
-    check.TextXAlignment = Enum.TextXAlignment.Center
-    check.Visible = default
-
-    local label = Text(row, config.Text or key, 13, false, default and Theme.Text or Theme.TextDisabled)
-    label.Size = UDim2.new(1, -28, 1, 0)
-    label.Position = UDim2.fromOffset(28, 0)
-
-    local hit = Create("TextButton", { Size = UDim2.fromScale(1,1), BackgroundTransparency = 1, Text = "", Parent = row })
-    local obj = { State = st, Frame = row }
-    function obj:SetValue(v)
-        st:SetValue(v)
-        Tween(box, .12, { BackgroundColor3 = v and Theme.Accent or Theme.Frame })
-        local stroke = box:FindFirstChildOfClass("UIStroke")
-        if stroke then Tween(stroke, .12, { Color = v and Theme.AccentHover or Theme.Border }) end
-        check.Visible = v
-        label.TextColor3 = v and Theme.Text or Theme.TextDisabled
-    end
-    function obj:OnChanged(fn) st:OnChanged(fn); return obj end
-    hit.MouseButton1Click:Connect(function() obj:SetValue(not st.Value) end)
-    return obj
-end
-GroupboxMethods.AddCheckbox = GroupboxMethods.AddToggle
-
-function GroupboxMethods:AddSlider(key, config)
-    config = config or {}
-    local min = config.Min or 0
-    local max = config.Max or 100
-    local default = config.Default or min
-    local suffix = config.Suffix or ""
-    local rounding = config.Rounding or 0
-    local st = State(default, config.Callback)
-    ZyrexLib.Options[key] = st
-
-    local row = self:_Row(52)
-    local label = Text(row, config.Text or key, 13, false, Theme.TextDisabled)
-    label.Size = UDim2.new(.65, 0, 0, 18)
-
-    local value = Text(row, tostring(default) .. suffix, 12, true, Theme.Accent)
-    value.Size = UDim2.new(.35, 0, 0, 18)
-    value.Position = UDim2.new(.65, 0, 0, 0)
-    value.TextXAlignment = Enum.TextXAlignment.Right
-
-    local track = Create("Frame", { Size = UDim2.new(1,0,0,8), Position = UDim2.fromOffset(0,30), BackgroundColor3 = Theme.Frame, Parent = row })
-    Corner(track, 6)
-    Stroke(track, Theme.Border)
-    local fill = Create("Frame", { Size = UDim2.fromScale((default-min)/(max-min),1), BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Parent = track })
-    Corner(fill, 6)
-    local knob = Create("Frame", { Size = UDim2.fromOffset(14,14), AnchorPoint = Vector2.new(.5,.5), Position = UDim2.new((default-min)/(max-min),0,.5,0), BackgroundColor3 = Theme.Text, Parent = track })
-    Corner(knob, 8)
-    Stroke(knob, Theme.Border)
-
-    local button = Create("TextButton", { Size = UDim2.new(1,0,0,24), Position = UDim2.fromOffset(0,22), BackgroundTransparency = 1, Text = "", Parent = row })
-    local dragging = false
-    local function fmt(v)
-        if rounding == 0 then return tostring(math.floor(v + .5)) .. suffix end
-        return string.format("%." .. tostring(rounding) .. "f", v) .. suffix
-    end
-    local function setPercent(p)
-        p = math.clamp(p, 0, 1)
-        local v = min + (max - min) * p
-        if rounding == 0 then v = math.floor(v + .5) else local f = 10 ^ rounding; v = math.floor(v * f + .5) / f end
-        local sp = (v - min) / (max - min)
-        fill.Size = UDim2.fromScale(sp, 1)
-        knob.Position = UDim2.new(sp, 0, .5, 0)
-        value.Text = fmt(v)
-        st:SetValue(v)
-    end
-    button.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            setPercent((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X)
-        end
-    end)
-    button.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
-    AddConnection(UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            setPercent((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X)
-        end
-    end))
-    return st
-end
-
-function GroupboxMethods:AddDropdown(key, config)
-    config = config or {}
-    local values = config.Values or {}
-    local default = config.Default or values[1] or "None"
-    local st = State(default, config.Callback)
-    ZyrexLib.Options[key] = st
-    local row = self:_Row(58)
-    local label = Text(row, config.Text or key, 13, false, Theme.TextDisabled)
-    label.Size = UDim2.new(1,0,0,18)
-    local btn = Create("TextButton", { Size = UDim2.new(1,0,0,30), Position = UDim2.fromOffset(0,24), BackgroundColor3 = Theme.Frame, Text = "", AutoButtonColor = false, Parent = row })
-    Corner(btn, 4)
-    Stroke(btn, Theme.Border)
-    local display = Text(btn, tostring(default), 13, false, Theme.Text)
-    display.Size = UDim2.new(1,-38,1,0)
-    display.Position = UDim2.fromOffset(12,0)
-    local arrow = Text(btn, "▼", 11, true, Theme.TextDisabled)
-    arrow.Size = UDim2.fromOffset(28, 30)
-    arrow.Position = UDim2.new(1,-32,0,0)
-    arrow.TextXAlignment = Enum.TextXAlignment.Center
-
+function GroupboxMethods:AddDropdown(key, cfg)
+    cfg = cfg or {}
+    local values = cfg.Values or {}
+    local default = cfg.Default or values[1] or ""
+    local state = NewState(key, default, cfg.Callback)
+    local row = self:_Row(46)
+    Create("TextLabel", {Size=UDim2.new(1,0,0,16), BackgroundTransparency=1, Text=cfg.Text or key, TextColor3=Theme.Text, Font=Enum.Font.SourceSansSemibold, TextSize=13, TextXAlignment=Enum.TextXAlignment.Left, Parent=row})
+    local btn = Create("TextButton", {Size=UDim2.new(1,0,0,24), Position=UDim2.new(0,0,0,20), BackgroundColor3=Theme.FrameBg, Text="", AutoButtonColor=false, Parent=row})
+    Corner(btn,4); Stroke(btn,Theme.Border)
+    local label = Create("TextLabel", {Size=UDim2.new(1,-28,1,0), Position=UDim2.fromOffset(8,0), BackgroundTransparency=1, Text=tostring(default), TextColor3=Theme.Text, Font=Enum.Font.SourceSansSemibold, TextSize=13, TextXAlignment=Enum.TextXAlignment.Left, Parent=btn})
+    Create("TextLabel", {Size=UDim2.fromOffset(20,24), Position=UDim2.new(1,-24,0,0), BackgroundTransparency=1, Text="▼", TextColor3=Theme.TextDisabled, Font=Enum.Font.SourceSansBold, TextSize=9, Parent=btn})
     local popup
-    local function close()
-        if popup then popup:Destroy(); popup = nil end
-        if ZyrexLib.OpenDropdown == close then ZyrexLib.OpenDropdown = nil end
-    end
+    local function close() if popup then popup:Destroy(); popup=nil end end
     btn.MouseButton1Click:Connect(function()
         if popup then close(); return end
-        if ZyrexLib.OpenDropdown then ZyrexLib.OpenDropdown() end
-        ZyrexLib.OpenDropdown = close
-        popup = Create("Frame", {
-            Size = UDim2.fromOffset(btn.AbsoluteSize.X, math.min(#values, config.MaxVisible or 6) * 28 + 8),
-            Position = UDim2.fromOffset(btn.AbsolutePosition.X, btn.AbsolutePosition.Y + btn.AbsoluteSize.Y + 4),
-            BackgroundColor3 = Theme.PopupBg,
-            ZIndex = 1000,
-            Parent = self.Page.Tab.Window.Gui,
-        })
-        Corner(popup, 4)
-        Stroke(popup, Theme.Border)
-        Padding(popup, 4, 4, 4, 4)
-        List(popup, Enum.FillDirection.Vertical, 2)
-        for _, item in ipairs(values) do
-            local opt = Create("TextButton", { Size = UDim2.new(1,0,0,26), BackgroundColor3 = item == st.Value and Theme.FrameHover or Theme.PopupBg, Text = tostring(item), TextColor3 = item == st.Value and Theme.Accent or Theme.Text, Font = Enum.Font.Gotham, TextSize = 13, AutoButtonColor = false, ZIndex = 1001, Parent = popup })
-            Corner(opt, 3)
-            opt.MouseButton1Click:Connect(function()
-                st:SetValue(item)
-                display.Text = tostring(item)
-                close()
-            end)
+        popup = Create("Frame", {Size=UDim2.fromOffset(btn.AbsoluteSize.X, math.min(#values,6)*24), Position=UDim2.fromOffset(btn.AbsolutePosition.X, btn.AbsolutePosition.Y+btn.AbsoluteSize.Y+2), BackgroundColor3=Theme.PopupBg, ZIndex=999, Parent=self.Window.Gui})
+        Corner(popup,4); Stroke(popup,Theme.Border); List(popup,0)
+        for _,v in ipairs(values) do
+            local item=Create("TextButton",{Size=UDim2.new(1,0,0,24),BackgroundColor3=(v==state.Value and Theme.FrameBgHovered or Theme.PopupBg),Text=tostring(v),TextColor3=Theme.Text,Font=Enum.Font.SourceSansSemibold,TextSize=13,AutoButtonColor=false,ZIndex=1000,Parent=popup})
+            item.MouseButton1Click:Connect(function() state:Set(v); label.Text=tostring(v); close() end)
         end
     end)
-    return st
+    return state
 end
 
-function GroupboxMethods:AddKeybind(key, config)
-    config = config or {}
-    local default = config.Default or Enum.KeyCode.Unknown
-    if typeof(default) == "string" then default = Enum.KeyCode[default] or Enum.KeyCode.Unknown end
-    local st = State(default, config.Callback)
-    ZyrexLib.Options[key] = st
-    local row = self:_Row(34)
-    local label = Text(row, config.Text or key, 13, false, Theme.TextDisabled)
-    label.Size = UDim2.new(1,-112,1,0)
-    local btn = Create("TextButton", { Size = UDim2.fromOffset(104,28), Position = UDim2.new(1,-104,.5,-14), BackgroundColor3 = Theme.Frame, Text = default == Enum.KeyCode.Unknown and "None" or default.Name, TextColor3 = Theme.Text, Font = Enum.Font.Gotham, TextSize = 12, AutoButtonColor = false, Parent = row })
-    Corner(btn, 4); Stroke(btn, Theme.Border)
-    btn.MouseButton1Click:Connect(function()
-        ZyrexLib.KeyListening = { State = st, Button = btn }
-        btn.Text = "..."
-        btn.TextColor3 = Theme.Accent
-    end)
-    return st
-end
-
-AddConnection(UserInputService.InputBegan:Connect(function(input, gpe)
-    if ZyrexLib.KeyListening then
-        local info = ZyrexLib.KeyListening
-        ZyrexLib.KeyListening = nil
-        local key = input.KeyCode
-        if key == Enum.KeyCode.Escape then key = Enum.KeyCode.Unknown end
-        info.State:SetValue(key)
-        info.Button.Text = key == Enum.KeyCode.Unknown and "None" or key.Name
-        info.Button.TextColor3 = Theme.Text
-        return
-    end
-end))
-
-function GroupboxMethods:AddColorPicker(key, config)
-    config = config or {}
-    local default = config.Default or Theme.Accent
-    local st = State(default, config.Callback)
-    ZyrexLib.Options[key] = st
-    local row = self:_Row(34)
-    local label = Text(row, config.Text or key, 13, false, Theme.TextDisabled)
-    label.Size = UDim2.new(1,-52,1,0)
-    local swatch = Create("TextButton", { Size = UDim2.fromOffset(42,22), Position = UDim2.new(1,-42,.5,-11), BackgroundColor3 = default, Text = "", AutoButtonColor = false, Parent = row })
-    Corner(swatch, 4); Stroke(swatch, Theme.Border)
-    local colors = { Theme.Accent, Color3.fromRGB(255,90,90), Color3.fromRGB(120,255,150), Color3.fromRGB(255,220,90), Color3.fromRGB(180,120,255), Color3.fromRGB(255,255,255) }
+function GroupboxMethods:AddColorPicker(key, cfg)
+    cfg = cfg or {}
+    local default = cfg.Default or Color3.fromRGB(255,255,255)
+    local state = NewState(key, default, cfg.Callback)
+    local row = self:_Row(26)
+    Create("TextLabel", {Size=UDim2.new(1,-30,1,0), BackgroundTransparency=1, Text=cfg.Text or key, TextColor3=Theme.Text, Font=Enum.Font.SourceSansSemibold, TextSize=13, TextXAlignment=Enum.TextXAlignment.Left, Parent=row})
+    local swatch = Create("TextButton", {Size=UDim2.fromOffset(16,16), Position=UDim2.new(1,-18,.5,-8), BackgroundColor3=default, Text="", AutoButtonColor=false, Parent=row})
+    Corner(swatch,8); Stroke(swatch,Theme.Border)
+    local palette = cfg.Palette or {Color3.fromRGB(0,0,255),Color3.fromRGB(90,90,255),Color3.fromRGB(0,255,0),Color3.fromRGB(255,65,65),Theme.Accent,Color3.fromRGB(255,255,255)}
     local popup
-    local function close() if popup then popup:Destroy(); popup = nil end end
+    local function close() if popup then popup:Destroy(); popup=nil end end
     swatch.MouseButton1Click:Connect(function()
         if popup then close(); return end
-        popup = Create("Frame", { Size = UDim2.fromOffset(156, 60), Position = UDim2.fromOffset(swatch.AbsolutePosition.X - 114, swatch.AbsolutePosition.Y + 26), BackgroundColor3 = Theme.PopupBg, ZIndex = 1000, Parent = self.Page.Tab.Window.Gui })
-        Corner(popup, 4); Stroke(popup, Theme.Border); Padding(popup, 8,8,8,8)
-        local grid = Create("UIGridLayout", { CellSize = UDim2.fromOffset(20,20), CellPadding = UDim2.fromOffset(5,5), Parent = popup })
-        for _, col in ipairs(colors) do
-            local c = Create("TextButton", { BackgroundColor3 = col, Text = "", AutoButtonColor = false, ZIndex = 1001, Parent = popup })
-            Corner(c, 3); Stroke(c, Theme.Border)
-            c.MouseButton1Click:Connect(function()
-                st:SetValue(col)
-                swatch.BackgroundColor3 = col
-                close()
-            end)
+        popup = Create("Frame", {Size=UDim2.fromOffset(126,54), Position=UDim2.fromOffset(swatch.AbsolutePosition.X-110, swatch.AbsolutePosition.Y+20), BackgroundColor3=Theme.PopupBg, ZIndex=999, Parent=self.Window.Gui})
+        Corner(popup,4); Stroke(popup,Theme.Border); Padding(popup,6,6,6,6)
+        local grid = Create("UIGridLayout", {CellSize=UDim2.fromOffset(16,16), CellPadding=UDim2.fromOffset(4,4), SortOrder=Enum.SortOrder.LayoutOrder, Parent=popup})
+        for _,c in ipairs(palette) do
+            local b=Create("TextButton",{BackgroundColor3=c,Text="",AutoButtonColor=false,ZIndex=1000,Parent=popup})
+            Corner(b,8); Stroke(b,Theme.Border)
+            b.MouseButton1Click:Connect(function() state:Set(c); swatch.BackgroundColor3=c; close() end)
         end
     end)
-    return st
+    return state
 end
 
-function GroupboxMethods:AddInput(key, config)
-    config = config or {}
-    local st = State(config.Default or "", config.Callback)
-    ZyrexLib.Options[key] = st
-    local row = self:_Row(58)
-    local label = Text(row, config.Text or key, 13, false, Theme.TextDisabled)
-    label.Size = UDim2.new(1,0,0,18)
-    local input = Create("TextBox", { Size = UDim2.new(1,0,0,30), Position = UDim2.fromOffset(0,24), BackgroundColor3 = Theme.Frame, Text = config.Default or "", PlaceholderText = config.Placeholder or "", PlaceholderColor3 = Theme.TextDisabled, TextColor3 = Theme.Text, Font = Enum.Font.Gotham, TextSize = 13, ClearTextOnFocus = false, Parent = row })
-    Corner(input, 4); Stroke(input, Theme.Border); Padding(input, 8,0,8,0)
-    input.FocusLost:Connect(function() st:SetValue(input.Text) end)
-    return st
+function GroupboxMethods:AddKeybind(key,cfg)
+    cfg = cfg or {}
+    local default = cfg.Default or Enum.KeyCode.Insert
+    if typeof(default)=="string" then default = Enum.KeyCode[default] or Enum.KeyCode.Unknown end
+    local state = NewState(key, default, cfg.Callback)
+    local row = self:_Row(28)
+    Create("TextLabel", {Size=UDim2.new(1,-88,1,0), BackgroundTransparency=1, Text=cfg.Text or key, TextColor3=Theme.Text, Font=Enum.Font.SourceSansSemibold, TextSize=13, TextXAlignment=Enum.TextXAlignment.Left, Parent=row})
+    local btn = Create("TextButton", {Size=UDim2.fromOffset(78,22), Position=UDim2.new(1,-78,.5,-11), BackgroundColor3=Theme.FrameBg, Text="["..default.Name.."]", TextColor3=Theme.Text, Font=Enum.Font.SourceSansSemibold, TextSize=12, AutoButtonColor=false, Parent=row})
+    Corner(btn,4); Stroke(btn,Theme.Border)
+    local picking=false
+    btn.MouseButton1Click:Connect(function() picking=true; btn.Text="[...]" end)
+    Connect(UserInputService.InputBegan,function(input,gpe)
+        if picking then
+            picking=false
+            if input.UserInputType == Enum.UserInputType.Keyboard then state:Set(input.KeyCode); btn.Text="["..input.KeyCode.Name.."]" end
+            return
+        end
+        if not gpe and input.KeyCode == state.Value and cfg.Callback then task.spawn(cfg.Callback, input.KeyCode) end
+    end)
+    return state
 end
 
-function GroupboxMethods:AddCodeBox(key, config)
-    config = config or {}
-    local st = State(config.Default or "", config.Callback)
-    ZyrexLib.Options[key] = st
-    local row = self:_Row(config.Height or 270)
-    local box = Create("TextBox", { Size = UDim2.fromScale(1,1), BackgroundColor3 = Theme.FrameActive, Text = config.Default or "-- Lua editor", TextColor3 = Theme.Text, Font = Enum.Font.Code, TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, ClearTextOnFocus = false, MultiLine = true, Parent = row })
-    Corner(box, 4); Stroke(box, Theme.Border); Padding(box, 10,10,10,10)
-    box.FocusLost:Connect(function() st:SetValue(box.Text) end)
-    return st
+function GroupboxMethods:AddInput(key,cfg)
+    cfg = cfg or {}
+    local state = NewState(key, cfg.Default or "", cfg.Callback)
+    local row = self:_Row(46)
+    Create("TextLabel", {Size=UDim2.new(1,0,0,16), BackgroundTransparency=1, Text=cfg.Text or key, TextColor3=Theme.Text, Font=Enum.Font.SourceSansSemibold, TextSize=13, TextXAlignment=Enum.TextXAlignment.Left, Parent=row})
+    local box = Create("TextBox", {Size=UDim2.new(1,0,0,24), Position=UDim2.fromOffset(0,20), BackgroundColor3=Theme.FrameBg, Text=cfg.Default or "", PlaceholderText=cfg.Placeholder or "", TextColor3=Theme.Text, PlaceholderColor3=Theme.TextDisabled, Font=Enum.Font.SourceSansSemibold, TextSize=13, ClearTextOnFocus=false, Parent=row})
+    Corner(box,4); Stroke(box,Theme.Border); Padding(box,8,0,8,0)
+    box.FocusLost:Connect(function() state:Set(box.Text) end)
+    return state
 end
 
---// One-call demo that recreates the provided C++ menu layout
+function GroupboxMethods:AddCodeBox(key,cfg)
+    cfg = cfg or {}
+    local row = self:_Row(cfg.Height or 260)
+    local box = Create("TextBox", {Size=UDim2.fromScale(1,1), BackgroundColor3=Theme.WindowBg, Text=cfg.Default or "-- Lua editor", TextColor3=Theme.Text, ClearTextOnFocus=false, MultiLine=true, TextXAlignment=Enum.TextXAlignment.Left, TextYAlignment=Enum.TextYAlignment.Top, Font=Enum.Font.Code, TextSize=13, Parent=row})
+    Corner(box,4); Stroke(box,Theme.Border); Padding(box,10,8,10,8)
+    local state = NewState(key, box.Text, cfg.Callback)
+    box.FocusLost:Connect(function() state:Set(box.Text) end)
+    state.Box = box
+    return state
+end
+
+local SubTabMethods = {}
+SubTabMethods.__index = SubTabMethods
+function SubTabMethods:_AddGroupbox(name, side, height)
+    local parent = side == "Left" and self.LeftColumn or self.RightColumn
+    local card = Create("Frame", {Size=UDim2.new(1,0,0,height or 0), AutomaticSize=height and Enum.AutomaticSize.None or Enum.AutomaticSize.Y, BackgroundColor3=Theme.ChildBg, Parent=parent})
+    Corner(card,5); Stroke(card,Theme.Border,1,.25)
+    local title = Create("TextLabel", {Size=UDim2.new(1,-28,0,24), Position=UDim2.fromOffset(14,10), BackgroundTransparency=1, Text=name or "Group", TextColor3=Theme.Text, Font=Enum.Font.SourceSansBold, TextSize=14, TextXAlignment=Enum.TextXAlignment.Left, Parent=card})
+    local container = Create("Frame", {Size=UDim2.new(1,-28,0,0), Position=UDim2.fromOffset(14,42), AutomaticSize=Enum.AutomaticSize.Y, BackgroundTransparency=1, Parent=card})
+    List(container,6)
+    local gb=setmetatable({Card=card,Container=container,Title=title,Window=self.Window}, GroupboxMethods)
+    return gb
+end
+function SubTabMethods:AddLeftGroupbox(name,height) return self:_AddGroupbox(name,"Left",height) end
+function SubTabMethods:AddRightGroupbox(name,height) return self:_AddGroupbox(name,"Right",height) end
+function SubTabMethods:AddFullGroupbox(name,height)
+    local gb = self:_AddGroupbox(name,"Left",height)
+    gb.Card.Size = UDim2.new(2, 16, 0, height or 0)
+    return gb
+end
+
+local TabMethods = {}
+TabMethods.__index = TabMethods
+function TabMethods:AddSubTab(name, icon)
+    local index = #self.SubTabs + 1
+    local frame = Create("Frame", {Size=UDim2.fromScale(1,1), BackgroundTransparency=1, Visible=index==1, Parent=self.PageFrame})
+    local left = Create("ScrollingFrame", {Size=UDim2.new(.5,-8,1,0), BackgroundTransparency=1, BorderSizePixel=0, CanvasSize=UDim2.fromOffset(0,0), AutomaticCanvasSize=Enum.AutomaticSize.Y, ScrollBarThickness=3, ScrollBarImageColor3=Theme.Border, Parent=frame})
+    Padding(left,0,0,0,0); List(left,14)
+    local right = Create("ScrollingFrame", {Size=UDim2.new(.5,-8,1,0), Position=UDim2.new(.5,8,0,0), BackgroundTransparency=1, BorderSizePixel=0, CanvasSize=UDim2.fromOffset(0,0), AutomaticCanvasSize=Enum.AutomaticSize.Y, ScrollBarThickness=3, ScrollBarImageColor3=Theme.Border, Parent=frame})
+    Padding(right,0,0,0,0); List(right,14)
+    local btn = Create("TextButton", {Size=UDim2.new(1,0,0,38), BackgroundColor3=index==1 and Theme.FrameBg or Theme.ChildBg, Text="", AutoButtonColor=false, Parent=self.Sidebar})
+    Corner(btn,4); Stroke(btn, index==1 and Theme.Border or Theme.ChildBg, 1, index==1 and .15 or 1)
+    Create("TextLabel", {Size=UDim2.fromOffset(30,38), BackgroundTransparency=1, Text=IconMap[icon or ""] or tostring(icon or ""), TextColor3=index==1 and Theme.Text or Theme.TextDisabled, Font=Enum.Font.SourceSansBold, TextSize=15, Parent=btn})
+    local lbl=Create("TextLabel", {Size=UDim2.new(1,-38,1,0), Position=UDim2.fromOffset(38,0), BackgroundTransparency=1, Text=name, TextColor3=index==1 and Theme.Text or Theme.TextDisabled, Font=Enum.Font.SourceSansBold, TextSize=13, TextXAlignment=Enum.TextXAlignment.Left, Parent=btn})
+    local st=setmetatable({Name=name,Frame=frame,Button=btn,Label=lbl,LeftColumn=left,RightColumn=right,Window=self.Window},SubTabMethods)
+    table.insert(self.SubTabs,st)
+    if index==1 then self.ActiveSubTab=st end
+    btn.MouseButton1Click:Connect(function() self:SelectSubTab(st) end)
+    return st
+end
+function TabMethods:SelectSubTab(st)
+    for _,s in ipairs(self.SubTabs) do
+        s.Frame.Visible = s==st
+        Tween(s.Button,.12,{BackgroundColor3=s==st and Theme.FrameBg or Theme.ChildBg})
+        s.Label.TextColor3 = s==st and Theme.Text or Theme.TextDisabled
+    end
+    self.ActiveSubTab = st
+end
+function TabMethods:AddLeftGroupbox(name,height)
+    if not self.ActiveSubTab then return self:AddSubTab("Main"):AddLeftGroupbox(name,height) end
+    return self.ActiveSubTab:AddLeftGroupbox(name,height)
+end
+function TabMethods:AddRightGroupbox(name,height)
+    if not self.ActiveSubTab then return self:AddSubTab("Main"):AddRightGroupbox(name,height) end
+    return self.ActiveSubTab:AddRightGroupbox(name,height)
+end
+
+local WindowMethods = {}
+WindowMethods.__index = WindowMethods
+function WindowMethods:SelectTab(tab)
+    for _,t in ipairs(self.Tabs) do
+        t.Content.Visible = t==tab
+        Tween(t.Button,.12,{BackgroundColor3=t==tab and Theme.FrameBg or Theme.WindowBg})
+        t.Label.TextColor3 = t==tab and Theme.Text or Theme.TextDisabled
+    end
+    self.ActiveTab = tab
+end
+function WindowMethods:AddTab(name, icon)
+    local index = #self.Tabs + 1
+    local content = Create("Frame", {Size=UDim2.new(1,0,1,-54), Position=UDim2.fromOffset(0,54), BackgroundTransparency=1, Visible=index==1, Parent=self.Content})
+    local sidebar = Create("Frame", {Size=UDim2.fromOffset(180, content.AbsoluteSize.Y), Position=UDim2.fromOffset(0,0), BackgroundTransparency=1, Parent=content})
+    Padding(sidebar,0,0,10,0); List(sidebar,8)
+    local page = Create("Frame", {Size=UDim2.new(1,-176,1,0), Position=UDim2.fromOffset(176,0), BackgroundTransparency=1, Parent=content})
+    local btn = Create("TextButton", {Size=UDim2.fromOffset(index==1 and 96 or 40, 40), BackgroundColor3=index==1 and Theme.FrameBg or Theme.WindowBg, Text="", AutoButtonColor=false, Parent=self.TabBar})
+    Corner(btn,4); Stroke(btn, Theme.Border,1,index==1 and .15 or .75)
+    local il = Create("TextLabel", {Size=UDim2.fromOffset(34,40), BackgroundTransparency=1, Text=IconMap[icon or ""] or tostring(icon or ""), TextColor3=index==1 and Theme.Text or Theme.TextDisabled, Font=Enum.Font.SourceSansBold, TextSize=16, Parent=btn})
+    local lbl = Create("TextLabel", {Size=UDim2.new(1,-38,1,0), Position=UDim2.fromOffset(38,0), BackgroundTransparency=1, Text=name, TextColor3=index==1 and Theme.Text or Theme.TextDisabled, Font=Enum.Font.SourceSansBold, TextSize=13, TextXAlignment=Enum.TextXAlignment.Left, Visible=index==1, Parent=btn})
+    local tab=setmetatable({Name=name,Content=content,Button=btn,Label=lbl,Icon=il,Sidebar=sidebar,PageFrame=page,SubTabs={},Window=self},TabMethods)
+    table.insert(self.Tabs,tab)
+    if index==1 then self.ActiveTab=tab end
+    btn.MouseButton1Click:Connect(function()
+        for _,t in ipairs(self.Tabs) do t.Label.Visible=false; t.Button.Size=UDim2.fromOffset(40,40) end
+        btn.Size=UDim2.fromOffset(math.max(96, TextBounds(name,13,Enum.Font.SourceSansBold).X+48),40); lbl.Visible=true
+        self:SelectTab(tab)
+    end)
+    return tab
+end
+function WindowMethods:SetVisible(v) self.Gui.Enabled = v end
+function WindowMethods:Destroy() self.Gui:Destroy() end
+
+function ZyrexLib:CreateWindow(cfg)
+    cfg = cfg or {}
+    local size = cfg.Size or UDim2.fromOffset(760,554)
+    local title = cfg.Title or "Zyrex"
+    local gui = Create("ScreenGui", {Name="ZyrexUILibrary", ResetOnSpawn=false, IgnoreGuiInset=true, ZIndexBehavior=Enum.ZIndexBehavior.Sibling})
+    pcall(function() gui.Parent = CoreGui end)
+    if not gui.Parent then gui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+    local main = Create("Frame", {Size=size, Position=cfg.Position or UDim2.new(.5,-size.X.Offset/2,.5,-size.Y.Offset/2), BackgroundColor3=Theme.WindowBg, BorderSizePixel=0, Parent=gui})
+    Corner(main,7)
+    local header = Create("Frame", {Size=UDim2.new(1,0,0,46), BackgroundColor3=Theme.TitleBg, BorderSizePixel=0, Parent=main})
+    Corner(header,7)
+    Create("Frame", {Size=UDim2.new(1,0,0,1), Position=UDim2.new(0,0,1,-1), BackgroundColor3=Theme.Border, BorderSizePixel=0, Parent=header})
+    Create("TextLabel", {Size=UDim2.new(1,-70,1,0), Position=UDim2.fromOffset(16,0), BackgroundTransparency=1, Text=title, TextColor3=Theme.Text, Font=Enum.Font.SourceSansBold, TextSize=14, TextXAlignment=Enum.TextXAlignment.Left, Parent=header})
+    local close = Create("TextButton", {Size=UDim2.fromOffset(24,24), Position=UDim2.new(1,-36,.5,-12), BackgroundTransparency=1, Text="×", TextColor3=Theme.Text, Font=Enum.Font.SourceSans, TextSize=22, AutoButtonColor=false, Parent=header})
+    close.MouseButton1Click:Connect(function() gui.Enabled=false end)
+    local content = Create("Frame", {Size=UDim2.new(1,-32,1,-78), Position=UDim2.fromOffset(16,62), BackgroundTransparency=1, Parent=main})
+    local tabbar = Create("Frame", {Size=UDim2.new(1,0,0,40), BackgroundTransparency=1, Parent=content})
+    List(tabbar,16,Enum.FillDirection.Horizontal)
+    local window=setmetatable({Gui=gui,Main=main,Header=header,Content=content,TabBar=tabbar,Tabs={},Theme=Theme},WindowMethods)
+    MakeDraggable(main, header)
+    if cfg.ToggleKey ~= false then
+        local key = cfg.ToggleKey or Enum.KeyCode.RightShift
+        Connect(UserInputService.InputBegan, function(input,gpe)
+            if not gpe and input.KeyCode == key then gui.Enabled = not gui.Enabled end
+        end)
+    end
+    table.insert(self.Windows,window)
+    return window
+end
+
+function ZyrexLib:Unload()
+    for _,c in ipairs(self.Connections) do pcall(function() c:Disconnect() end) end
+    for _,w in ipairs(self.Windows) do pcall(function() w.Gui:Destroy() end) end
+    self.Unloaded = true
+end
+
 function ZyrexLib:CreateDemo()
-    local Window = self:CreateWindow({ Title = "Zyrex", Size = UDim2.fromOffset(760, 554), ToggleKey = Enum.KeyCode.RightShift })
+    local Window = self:CreateWindow({Title="Zyrex", Size=UDim2.fromOffset(760,554), ToggleKey=Enum.KeyCode.RightShift})
+    local Combat=Window:AddTab("Combat","target")
+    local Legit=Combat:AddSubTab("Legit","verified")
+    Combat:AddSubTab("Silent","click"); Combat:AddSubTab("Aimbot","cursor"); Combat:AddSubTab("Trigger","clock")
+    local Visuals=Window:AddTab("Visuals","eye")
+    local World=Visuals:AddSubTab("World","globe"); Visuals:AddSubTab("Local","location"); Visuals:AddSubTab("ESP","objects"); Visuals:AddSubTab("Visualizers","pulse")
+    local Skin=Window:AddTab("Skin Changer","palette"); Skin:AddSubTab("Skins","crime"); Skin:AddSubTab("Knives","knife"); Skin:AddSubTab("Custom","wrench")
+    local Movement=Window:AddTab("Movement","running"); Movement:AddSubTab("Legit","verified"); Movement:AddSubTab("Rage","evil")
+    local Misc=Window:AddTab("Misc","misc"); local MiscMain=Misc:AddSubTab("Main","misc")
+    local Lua=Window:AddTab("Lua","code"); local LuaMain=Lua:AddSubTab("Editor","code")
+    local Settings=Window:AddTab("Settings","settings"); local SetMain=Settings:AddSubTab("Theme","settings")
 
-    local Combat = Window:AddTab("Combat", "◎")
-    local Legit = Combat:AddSubTab("Legit", "✓")
-    Combat:AddSubTab("Silent", "◉"):AddLeftGroupbox("Silent"):AddLabel("Empty in the C++ file")
-    Combat:AddSubTab("Aimbot", "⌖"):AddLeftGroupbox("Aimbot"):AddLabel("Empty in the C++ file")
-    Combat:AddSubTab("Trigger", "◷"):AddLeftGroupbox("Trigger"):AddLabel("Empty in the C++ file")
+    local L1=Legit:AddLeftGroupbox("Legit",248)
+    L1:AddHeaderToggle("legit_enabled",{Text="Legit",Default=true})
+    L1:AddToggle("predict_aim",{Text="Predict aim",Default=true})
+    L1:AddToggle("auto_group",{Text="Auto group"})
+    L1:AddToggle("visible_check",{Text="Visible check",Default=true})
+    L1:AddToggle("flash_check",{Text="Flash check"})
+    L1:AddToggle("scope_check",{Text="Scope check"})
+    L1:AddToggle("humanized_smooth",{Text="Humanized smooth"})
+    L1:AddToggle("hit_chance",{Text="Hit chance"})
+    local L2=Legit:AddLeftGroupbox("",116)
+    L2.Title.Visible=false
+    L2.Container.Position=UDim2.fromOffset(14,14)
+    L2:AddSlider("humanized_smoothness",{Text="Humanized Smoothness",Min=0,Max=100,Default=30,Suffix="%"})
+    L2:AddSlider("hit_chance_slider",{Text="Hit chance",Min=0,Max=100,Default=70,Suffix="%"})
+    local R1=Legit:AddRightGroupbox("Draw FOV",374)
+    R1:AddHeaderToggle("draw_fov",{Text="Draw FOV"})
+    R1:AddSeparator("Render")
+    R1:AddToggle("draw_circle_outlines",{Text="Draw circle outlines"})
+    R1:AddToggle("draw_circle_filled",{Text="Draw circle filled"})
+    R1:AddToggle("draw_center_tracer",{Text="Draw center tracer"})
+    R1:AddToggle("draw_recoil_circle",{Text="Draw recoil circle"})
+    R1:AddSeparator("Colors")
+    R1:AddColorPicker("circle_outlines_color",{Text="Circle outlines",Default=Color3.fromRGB(0,0,255)})
+    R1:AddColorPicker("circle_filled_color",{Text="Circle filled",Default=Color3.fromRGB(90,90,255)})
+    R1:AddColorPicker("center_tracer_color",{Text="Center tracer",Default=Color3.fromRGB(0,255,0)})
+    R1:AddColorPicker("recoil_circle_color",{Text="Recoil circle",Default=Color3.fromRGB(255,65,65)})
+    R1:AddSeparator("Configs")
+    R1:AddSlider("line_thickness",{Text="Line thichness",Min=.5,Max=3,Default=1,Rounding=1,Suffix="px"})
 
-    local legitMain = Legit:AddLeftGroupbox("Legit")
-    legitMain:AddToggle("legit_enabled", { Text = "Legit", Default = false })
-    legitMain:AddCheckbox("predict_aim", { Text = "Predict aim" })
-    legitMain:AddCheckbox("auto_group", { Text = "Auto group" })
-    legitMain:AddCheckbox("visible_check", { Text = "Visible check" })
-    legitMain:AddCheckbox("flash_check", { Text = "Flash check" })
-    legitMain:AddCheckbox("scope_check", { Text = "Scope check" })
-    legitMain:AddCheckbox("humanized_smooth", { Text = "Humanized smooth" })
-    legitMain:AddCheckbox("hit_chance", { Text = "Hit chance" })
+    local VO=World:AddLeftGroupbox("others",210)
+    VO:AddSeparator("Combo")
+    VO:AddDropdown("main_target",{Text="Main target",Values={"Header","Body","Limbs"},Default="Header"})
+    VO:AddDropdown("aim_mode",{Text="Aim mode",Values={"Legit","Rage","Bot"},Default="Legit"})
+    VO:AddSeparator("Keybind")
+    VO:AddKeybind("visual_keybind",{Text="Keybind",Default=Enum.KeyCode.Insert})
 
-    local legitSliders = Legit:AddLeftGroupbox("Tuning")
-    legitSliders:AddSlider("humanized_smoothness", { Text = "Humanized Smoothness", Min = 0, Max = 100, Default = 30, Suffix = "%" })
-    legitSliders:AddSlider("hit_chance_slider", { Text = "Hit chance", Min = 0, Max = 100, Default = 70, Suffix = "%" })
+    local LU=LuaMain:AddLeftGroupbox("path",44)
+    LU.Title.Visible=false; LU.Container.Position=UDim2.fromOffset(14,10)
+    LU:AddLabel("Please select a script")
+    local Editor=LuaMain:AddLeftGroupbox("editor-frame",310)
+    Editor.Title.Visible=false; Editor.Container.Position=UDim2.fromOffset(14,14)
+    Editor:AddCodeBox("lua_editor",{Height=274,Default="-- select a script from Explorer\nprint('Zyrex')"})
+    local Controls=LuaMain:AddLeftGroupbox("editor-controls",58)
+    Controls.Title.Visible=false; Controls.Container.Position=UDim2.fromOffset(14,14)
+    Controls:AddButton({Text="Clear",Func=function() end})
+    local Explorer=LuaMain:AddRightGroupbox("Explorer",420)
+    Explorer:AddSeparator("Explorer")
+    Explorer:AddButton({Text="radar_hack.lua"}); Explorer:AddButton({Text="spectator_list.lua"}); Explorer:AddButton({Text="auto_jump.lua"}); Explorer:AddButton({Text="anti_aim.lua"}); Explorer:AddButton({Text="anti_troll.lua"})
 
-    local fov = Legit:AddRightGroupbox("Draw FOV")
-    fov:AddToggle("draw_fov", { Text = "Draw FOV" })
-    fov:AddSeparator("Render")
-    fov:AddCheckbox("draw_circle_outlines", { Text = "Draw circle outlines" })
-    fov:AddCheckbox("draw_circle_filled", { Text = "Draw circle filled" })
-    fov:AddCheckbox("draw_center_tracer", { Text = "Draw center tracer" })
-    fov:AddCheckbox("draw_recoil_circle", { Text = "Draw recoil circle" })
-    fov:AddSeparator("Colors")
-    fov:AddColorPicker("circle_outlines_color", { Text = "Circle outlines", Default = Color3.fromRGB(0, 0, 255) })
-    fov:AddColorPicker("circle_filled_color", { Text = "Circle filled", Default = Color3.fromRGB(0, 0, 255) })
-    fov:AddColorPicker("center_tracer_color", { Text = "Center tracer", Default = Color3.fromRGB(0, 255, 0) })
-    fov:AddColorPicker("recoil_circle_color", { Text = "Recoil circle", Default = Color3.fromRGB(255, 0, 0) })
-    fov:AddSeparator("Configs")
-    fov:AddSlider("line_thickness", { Text = "Line thickness", Min = 0.5, Max = 3, Default = 1, Rounding = 1, Suffix = "px" })
-
-    local Visuals = Window:AddTab("Visuals", "◌")
-    local World = Visuals:AddSubTab("World", "◎")
-    Visuals:AddSubTab("Local", "⌖"):AddLeftGroupbox("Local"):AddLabel("Empty in the C++ file")
-    Visuals:AddSubTab("ESP", "▦"):AddLeftGroupbox("ESP"):AddLabel("Empty in the C++ file")
-    Visuals:AddSubTab("Visualizers", "≋"):AddLeftGroupbox("Visualizers"):AddLabel("Empty in the C++ file")
-    local other = World:AddLeftGroupbox("Combo")
-    other:AddDropdown("main_target", { Text = "Main target", Values = { "Header", "Body", "Limbs" }, Default = "Header" })
-    other:AddDropdown("aim_mode", { Text = "Aim mode", Values = { "Legit", "Rage", "Bot" }, Default = "Legit" })
-    other:AddSeparator("Keybind")
-    other:AddKeybind("visual_keybind", { Text = "Keybind", Default = "Insert" })
-
-    local Skins = Window:AddTab("Skin Changer", "◈")
-    Skins:AddSubTab("Skins", "♢"):AddLeftGroupbox("Skins"):AddLabel("Empty in the C++ file")
-    Skins:AddSubTab("Knives", "†"):AddLeftGroupbox("Knives"):AddLabel("Empty in the C++ file")
-    Skins:AddSubTab("Custom", "⚒"):AddLeftGroupbox("Custom"):AddLabel("Empty in the C++ file")
-
-    local Movement = Window:AddTab("Movement", "↟")
-    Movement:AddSubTab("Legit", "✓"):AddLeftGroupbox("Legit"):AddLabel("Empty in the C++ file")
-    Movement:AddSubTab("Rage", "☠"):AddLeftGroupbox("Rage"):AddLabel("Empty in the C++ file")
-
-    local Misc = Window:AddTab("Misc", "✦")
-    Misc:GetPage():AddLeftGroupbox("Misc"):AddLabel("Empty in the C++ file")
-
-    local Lua = Window:AddTab("Lua", "</>")
-    local luaPage = Lua:GetPage()
-    local editor = luaPage:AddLeftGroupbox("Editor")
-    editor:AddLabel("Please select a script")
-    editor:AddCodeBox("script_editor", { Height = 290, Default = "-- Zyrex Lua editor\nprint('hello world')" })
-    editor:AddButton({ Text = "Clear", Callback = function() end })
-    editor:AddButton({ Text = "Open", Callback = function() end })
-    editor:AddButton({ Text = "Save", Callback = function() end })
-    editor:AddButton({ Text = "Execute", Callback = function() end })
-    local explorer = luaPage:AddRightGroupbox("Explorer")
-    explorer:AddButton({ Text = "radar_hack.lua" })
-    explorer:AddButton({ Text = "spectator_list.lua" })
-    explorer:AddButton({ Text = "auto_jump.lua" })
-    explorer:AddButton({ Text = "anti_aim.lua" })
-    explorer:AddButton({ Text = "anti_troll.lua" })
-
-    local Settings = Window:AddTab("Settings", "⚙")
-    local theme = Settings:GetPage():AddLeftGroupbox("Theme")
-    theme:AddColorPicker("theme_accent", { Text = "Accent", Default = Theme.Accent })
-    theme:AddColorPicker("theme_text", { Text = "Text", Default = Theme.Text })
-    theme:AddColorPicker("theme_button", { Text = "Button", Default = Theme.Frame })
-    theme:AddColorPicker("theme_frame", { Text = "Frame", Default = Theme.Frame })
-    theme:AddColorPicker("theme_title", { Text = "Title", Default = Theme.TitleBg })
-    theme:AddColorPicker("theme_border", { Text = "Border", Default = Theme.Border })
-    theme:AddColorPicker("theme_window", { Text = "Window", Default = Theme.WindowBg })
-    theme:AddColorPicker("theme_child", { Text = "Child", Default = Theme.ChildBg })
-    theme:AddColorPicker("theme_popup", { Text = "Popup", Default = Theme.PopupBg })
-
-    Window:SelectTab(Combat)
+    local TG=SetMain:AddLeftGroupbox("Theme",430)
+    for _,name in ipairs({"Accent","Accent hovered","Accent active","Text","Text disabled","Button","Button hovered","Button active","Frame","Frame hovered","Frame active","Title","Border","Window","Child","Popup"}) do
+        TG:AddColorPicker("theme_"..name:gsub("%s+","_"):lower(),{Text=name,Default=Theme.Accent})
+    end
+    MiscMain:AddLeftGroupbox("Misc",100):AddLabel("Empty page, matching C++ placeholder.")
     return Window
 end
 
