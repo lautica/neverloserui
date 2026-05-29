@@ -1241,8 +1241,20 @@ function Library:Unload()
 end
 
 -- ============================================================
--- // CONVENIENCE — expose layout constants for menu building
+-- // EXPOSE widget functions directly on Library
+-- so callers can do UI:AddCheckbox(frame, ...) etc.
 -- ============================================================
+function Library:AddCheckbox(frame, x, y, ...)  return AddCheckbox(frame, x, y, ...) end
+function Library:AddSlider(frame, x, y, ...)    return AddSlider(frame, x, y, ...) end
+function Library:AddDropdown(frame, x, y, ...)  return AddDropdown(frame, x, y, ...) end
+function Library:AddButton(frame, x, y, ...)    return AddButton(frame, x, y, ...) end
+function Library:AddTextInput(frame, x, y, ...) return AddTextInput(frame, x, y, ...) end
+function Library:AddSubtabBar(frame, x, y, ...) return AddSubtabBar(frame, x, y, ...) end
+function Library:AddColorSwatch(frame, x, y, ...) return AddColorSwatch(frame, x, y, ...) end
+function Library:DrawBox(frame, ...)            return DrawSectionBox(frame, ...) end
+function Library:DrawInnerSep(frame, ...)       return DrawInnerSep(frame, ...) end
+
+-- Layout constants
 Library.PAD     = PAD
 Library.L_W     = L_W
 Library.GAP     = GAP
@@ -1252,5 +1264,10 @@ Library.BOX_PAD = BOX_PAD
 Library.MENU_H  = MENU_H
 Library.TITLE_H = TITLE_H
 Library.Colors  = C
+
+-- Expose Create/Stroke for menu file use
+Library.Create  = Create
+Library.Stroke  = Stroke
+Library.Corner  = Corner
 
 return Library
