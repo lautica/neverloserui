@@ -427,7 +427,11 @@ function Groupbox:AddToggle(key, cfg)
     local st = stroke(box, default and Theme.AccentHovered or Theme.Border, 1, default and .15 or .18)
     local check = drawCheckMark(box, box.ZIndex + 2)
     check.Visible = default
-    check.GroupTransparency = default and 0 or 1
+    for _, seg in ipairs(check:GetChildren()) do
+        if seg:IsA("Frame") then
+            seg.BackgroundTransparency = default and 0 or 1
+        end
+    end
 
     local label = textLabel({
         Size = UDim2.new(1, -26, 1, 0),
@@ -449,7 +453,11 @@ function Groupbox:AddToggle(key, cfg)
         tween(box, Tokens.FastAnim, { BackgroundColor3 = v and Theme.Accent or Theme.FrameBg })
         tween(st, Tokens.FastAnim, { Color = v and Theme.AccentHovered or Theme.Border, Transparency = v and .1 or .18 })
         check.Visible = true
-        tween(check, Tokens.FastAnim, { GroupTransparency = v and 0 or 1 })
+        for _, seg in ipairs(check:GetChildren()) do
+            if seg:IsA("Frame") then
+                tween(seg, Tokens.FastAnim, { BackgroundTransparency = v and 0 or 1 })
+            end
+        end
         task.delay(Tokens.FastAnim, function()
             if check and check.Parent and not s.Value then check.Visible = false end
         end)
