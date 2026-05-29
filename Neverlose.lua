@@ -1,3 +1,5 @@
+-- ZyrexLib Final V2 Patch
+-- Fixed checkbox animation crash.
 -- ZyrexLib_Final.lua
 -- Standalone Roblox/Luau UI library inspired by the supplied Zyrex Dear ImGui source.
 -- Returns ZyrexLib. Designed for loadstring(game:HttpGet(...))().
