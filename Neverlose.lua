@@ -1,4 +1,4 @@
--- // Bankroll Mafia UI Library — Luau Port
+-- // Bankroll Mafia UI Library — Luau Ports
 -- Exact 1:1 from: colors.h, button.h, checkbox.h, slider.h, dropdown.h,
 --                 subtab.h, tabbar.h, textinput.h, colorpicker.h, menu.cpp
 -- Every color, measurement, and visual behavior matched exactly.
@@ -1244,15 +1244,15 @@ end
 -- // EXPOSE widget functions directly on Library
 -- so callers can do UI:AddCheckbox(frame, ...) etc.
 -- ============================================================
-function Library:AddCheckbox(frame, x, y, ...)  return AddCheckbox(frame, x, y, ...) end
-function Library:AddSlider(frame, x, y, ...)    return AddSlider(frame, x, y, ...) end
-function Library:AddDropdown(frame, x, y, ...)  return AddDropdown(frame, x, y, ...) end
-function Library:AddButton(frame, x, y, ...)    return AddButton(frame, x, y, ...) end
-function Library:AddTextInput(frame, x, y, ...) return AddTextInput(frame, x, y, ...) end
-function Library:AddSubtabBar(frame, x, y, ...) return AddSubtabBar(frame, x, y, ...) end
-function Library:AddColorSwatch(frame, x, y, ...) return AddColorSwatch(frame, x, y, ...) end
-function Library:DrawBox(frame, ...)            return DrawSectionBox(frame, ...) end
-function Library:DrawInnerSep(frame, ...)       return DrawInnerSep(frame, ...) end
+Library.AddCheckbox   = AddCheckbox
+Library.AddSlider     = AddSlider
+Library.AddDropdown   = AddDropdown
+Library.AddButton     = AddButton
+Library.AddTextInput  = AddTextInput
+Library.AddSubtabBar  = AddSubtabBar
+Library.AddColorSwatch= AddColorSwatch
+Library.DrawBox       = DrawSectionBox
+Library.DrawInnerSep  = DrawInnerSep
 
 -- Layout constants
 Library.PAD     = PAD
